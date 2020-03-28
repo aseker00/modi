@@ -23,6 +23,7 @@ train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True)
 dev_dataloader = DataLoader(dev_dataset, batch_size=32)
 test_dataloader = DataLoader(test_dataset, batch_size=32)
 
+device = None
 num_tags = len(morpheme_vocab['tags'])
 tag2id = {v: i for i, v in enumerate(morpheme_vocab['tags'])}
 token_char_emb = TokenCharRNNEmbedding(char_ft_emb, 300, 1, 0.0)
@@ -32,8 +33,9 @@ tag_emb = nn.Embedding(num_embeddings=num_tags, embedding_dim=100, padding_idx=0
 decoder_tag_rnn = nn.LSTM(tag_emb.embedding_dim, token_encoder.hidden_size, 1, dropout=0.0, batch_first=True)
 decoder_tag_token_rnn = nn.LSTM(tag_emb.embedding_dim + token_emb.embedding_dim, token_encoder.hidden_size, 1, dropout=0.0, batch_first=True)
 morph_decoder = MorphemeDecoder(decoder_tag_token_rnn, 0.0, num_tags, tag2id['<EOT>'])
-model = Seq2SeqClassifier(token_emb, token_encoder, tag_emb, morph_decoder)
-device = None
+model = Seq2SeqClassifier(token_emb, token_encoder, tag_emb, morph_decoder, device)
+if device:
+    model.to(device)
 
 
 def run_batch(batch, tagger, optimizer, teacher_forcing):

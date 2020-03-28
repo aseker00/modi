@@ -174,13 +174,14 @@ class MorphemeDecoder(nn.Module):
 
 class Seq2SeqClassifier(nn.Module):
 
-    def __init__(self, enc_emb, encoder, dec_emb, decoder):
+    def __init__(self, enc_emb, encoder, dec_emb, decoder, device=None):
         super(Seq2SeqClassifier, self).__init__()
         self.enc_emb = enc_emb
         self.encoder = encoder
         self.dec_emb = dec_emb
         self.decoder = decoder
         self.crf = CRF(decoder.num_tags, batch_first=True)
+        self.device = device
 
     def forward(self, token_seq, token_char_seq, token_char_lengths, token_lengths, max_token_tags_num, gold_tag_seq=None, teacher_forcing=None):
         embed_tokens = self.enc_emb(token_seq, token_char_seq, token_char_lengths)
@@ -204,8 +205,8 @@ class Seq2SeqClassifier(nn.Module):
     def _forward_tag_decoding(self, dec_hidden_state, token_lengths, max_tag_seq_len, gold_tag_seq, teacher_forcing):
         tag_scores = []
         batch_size = token_lengths.shape[0]
-        embed_tag = self.dec_emb(torch.ones((batch_size, 1), dtype=torch.long))
-        cur_token_idx = torch.zeros(batch_size, dtype=torch.long)
+        embed_tag = self.dec_emb(torch.ones((batch_size, 1), dtype=torch.long, device=self.device))
+        cur_token_idx = torch.zeros(batch_size, dtype=torch.long, device=self.device)
         for i in range(max_tag_seq_len):
             dec_tag_scores, dec_hidden_state = self.decoder(embed_tag, dec_hidden_state)
             tag_scores.append(dec_tag_scores.squeeze(dim=1))
@@ -225,8 +226,8 @@ class Seq2SeqClassifier(nn.Module):
     def _forward_tag_token_decoding(self, embed_tokens, dec_hidden_state, token_lengths, max_tag_seq_len, gold_tag_seq, teacher_forcing):
         tag_scores = []
         batch_size = token_lengths.shape[0]
-        embed_tag = self.dec_emb(torch.ones((batch_size, 1), dtype=torch.long))
-        cur_token_idx = torch.zeros(batch_size, dtype=torch.long)
+        embed_tag = self.dec_emb(torch.ones((batch_size, 1), dtype=torch.long, device=self.device))
+        cur_token_idx = torch.zeros(batch_size, dtype=torch.long, device=self.device)
         for i in range(max_tag_seq_len):
             embed_token = [t[idx] if idx < t.shape[0] else t[-1] for t, idx in zip(embed_tokens, cur_token_idx)]
             embed_token = torch.stack(embed_token, dim=0).unsqueeze(dim=1)
