@@ -166,7 +166,7 @@ def load_lattices(root_dir_path, partition):
 
 def main():
     tb_root_dir_path = Path.home() / 'dev/onlplab/HebrewResources/HebrewTreebank/hebtb'
-    root_dir_path = Path.home() / 'dev/aseker00/mogy'
+    root_dir_path = Path.home() / 'dev/aseker00/modi'
     partition = ['dev', 'test', 'train']
     for partition_type in partition:
         gold_df = _process_treebank(tb_root_dir_path, partition_type)

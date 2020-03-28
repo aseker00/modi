@@ -318,7 +318,7 @@ def save_ft_vec(root_dir_path, ft_root_dir_path):
 
 
 def main():
-    root_dir_path = Path.home() / 'dev/aseker00/mogy'
+    root_dir_path = Path.home() / 'dev/aseker00/modi'
     ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
     partition = tb.load_lattices(root_dir_path, ['dev', 'test', 'train'])
     # _save_token_dataset(root_dir_path, partition)

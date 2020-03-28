@@ -8,7 +8,7 @@ from pos_tagging_utils import *
 from pathlib import Path
 # import sys
 
-root_dir_path = Path.home() / 'dev/aseker00/mogy'
+root_dir_path = Path.home() / 'dev/aseker00/modi'
 ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
 # sys.path.insert(0, str(root_dir_path))
 
