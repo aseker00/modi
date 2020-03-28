@@ -189,12 +189,8 @@ class Seq2SeqClassifier(nn.Module):
         batch_size = embed_tokens.shape[0]
         enc_h = enc_hidden_state[0].view(self.encoder.rnn.num_layers, 2, batch_size, self.encoder.rnn.hidden_size)
         enc_c = enc_hidden_state[1].view(self.encoder.rnn.num_layers, 2, batch_size, self.encoder.rnn.hidden_size)
-        dec_h = enc_h[-self.decoder.rnn.num_layers:].transpose(dim0=2, dim1=3).reshape(self.decoder.rnn.num_layers, -1,
-                                                                                       batch_size).transpose(dim0=1,
-                                                                                                             dim1=2)
-        dec_c = enc_c[-self.decoder.rnn.num_layers:].transpose(dim0=2, dim1=3).reshape(self.decoder.rnn.num_layers, -1,
-                                                                                       batch_size).transpose(dim0=1,
-                                                                                                             dim1=2)
+        dec_h = enc_h[-self.decoder.rnn.num_layers:].transpose(dim0=2, dim1=3).reshape(self.decoder.rnn.num_layers, -1, batch_size).transpose(dim0=1, dim1=2).contiguous()
+        dec_c = enc_c[-self.decoder.rnn.num_layers:].transpose(dim0=2, dim1=3).reshape(self.decoder.rnn.num_layers, -1, batch_size).transpose(dim0=1, dim1=2).contiguous()
         dec_hidden_state = (dec_h, dec_c)
         if self.decoder.rnn.input_size == self.dec_emb.embedding_dim:
             tag_scores = self._forward_tag_decoding(dec_hidden_state, token_lengths, max_token_tags_num * token_seq.shape[1], gold_tag_seq, teacher_forcing)
