@@ -81,14 +81,15 @@ def _extract_vocab(samples):
                     lemmas.update([m[1] for m in morphemes])
                     tags.update([m[2] for m in morphemes])
                     feats.update([m[3] for m in morphemes])
-    tokens = ['<PAD>', '<SOS>', '<EOT>'] + sorted(list(tokens))
-    chars = ['<PAD>', '<SOS>', '<EOT>'] + sorted(list(chars))
-    forms = ['<PAD>', '<SOS>', '<EOT>'] + sorted(list(forms))
-    lemmas = ['<PAD>', '<SOS>', '<EOT>'] + sorted(list(lemmas))
-    if '_' in tags:
-        tags.remove('_')
+    tokens = ['<PAD>'] + sorted(list(tokens))
+    chars = ['<PAD>'] + sorted(list(chars))
+    for m in [forms, lemmas, tags, feats]:
+        if '_' in m:
+            m.remove('_')
+    forms = ['<PAD>', '<SOS>', '<EOT>', '_'] + sorted(list(forms))
+    lemmas = ['<PAD>', '<SOS>', '<EOT>', '_'] + sorted(list(lemmas))
     tags = ['<PAD>', '<SOS>', '<EOT>', '_'] + sorted(list(tags))
-    feats = ['<PAD>', '<SOS>', '<EOT>'] + sorted(list(feats))
+    feats = ['<PAD>', '<SOS>', '<EOT>', '_'] + sorted(list(feats))
     token2id = {v: i for i, v in enumerate(tokens)}
     char2id = {v: i for i, v in enumerate(chars)}
     form2id = {v: i for i, v in enumerate(forms)}
@@ -141,38 +142,59 @@ def _load_vocab(root_dir_path, samples_type):
             'tags': tags, 'tag2id': tag2id, 'feats': feats, 'feats2id': feats2id}
 
 
-def _save_ft_emb(root_dir_path, ft_root_dir_path, vocab):
+def _save_ft_emb(root_dir_path, ft_root_dir_path, morpheme_vocab, token_vocab):
     vocab_dir_path = root_dir_path / 'vocab'
     ft_model_path = ft_root_dir_path / 'models/cc.he.300.bin'
     chars_vec_file_path = vocab_dir_path / 'chars.vec'
     tokens_vec_file_path = vocab_dir_path / 'tokens.vec'
-    forms_vec_file_path = vocab_dir_path / 'forms.vec'
-    lemmas_vec_file_path = vocab_dir_path / 'lemmas.vec'
+    morpheme_forms_vec_file_path = vocab_dir_path / 'morpheme_forms.vec'
+    morpheme_lemmas_vec_file_path = vocab_dir_path / 'morpheme_lemmas.vec'
+    token_forms_vec_file_path = vocab_dir_path / 'token_forms.vec'
+    token_lemmas_vec_file_path = vocab_dir_path / 'token_lemmas.vec'
     if chars_vec_file_path.exists():
         chars_vec_file_path.unlink()
-    ft.load_embedding_weight_matrix(ft_model_path, chars_vec_file_path, vocab['chars'])
+    ft.load_embedding_weight_matrix(ft_model_path, chars_vec_file_path, morpheme_vocab['chars'])
     if tokens_vec_file_path.exists():
         tokens_vec_file_path.unlink()
-    ft.load_embedding_weight_matrix(ft_model_path, tokens_vec_file_path, vocab['tokens'])
-    if forms_vec_file_path.exists():
-        forms_vec_file_path.unlink()
-    ft.load_embedding_weight_matrix(ft_model_path, forms_vec_file_path, vocab['forms'])
-    if lemmas_vec_file_path.exists():
-        lemmas_vec_file_path.unlink()
-    ft.load_embedding_weight_matrix(ft_model_path, lemmas_vec_file_path, vocab['lemmas'])
+    ft.load_embedding_weight_matrix(ft_model_path, tokens_vec_file_path, morpheme_vocab['tokens'])
+    if morpheme_forms_vec_file_path.exists():
+        morpheme_forms_vec_file_path.unlink()
+    ft.load_embedding_weight_matrix(ft_model_path, morpheme_forms_vec_file_path, morpheme_vocab['forms'])
+    if morpheme_lemmas_vec_file_path.exists():
+        morpheme_lemmas_vec_file_path.unlink()
+    ft.load_embedding_weight_matrix(ft_model_path, morpheme_lemmas_vec_file_path, morpheme_vocab['lemmas'])
+    if token_forms_vec_file_path.exists():
+        token_forms_vec_file_path.unlink()
+    ft.load_embedding_weight_matrix(ft_model_path, token_forms_vec_file_path, token_vocab['forms'])
+    if token_lemmas_vec_file_path.exists():
+        token_lemmas_vec_file_path.unlink()
+    ft.load_embedding_weight_matrix(ft_model_path, token_lemmas_vec_file_path, token_vocab['lemmas'])
 
 
-def load_ft_emb(root_dir_path, ft_root_dir_path, vocab):
+def load_morpheme_ft_emb(root_dir_path, ft_root_dir_path, morpheme_vocab):
     vocab_dir_path = root_dir_path / 'vocab'
     ft_model_path = ft_root_dir_path / 'models/cc.he.300.bin'
     chars_vec_file_path = vocab_dir_path / 'chars.vec'
     tokens_vec_file_path = vocab_dir_path / 'tokens.vec'
-    forms_vec_file_path = vocab_dir_path / 'forms.vec'
-    lemmas_vec_file_path = vocab_dir_path / 'lemmas.vec'
-    return (ft.load_embedding_weight_matrix(ft_model_path, chars_vec_file_path, vocab['chars']),
-            ft.load_embedding_weight_matrix(ft_model_path, tokens_vec_file_path, vocab['tokens']),
-            ft.load_embedding_weight_matrix(ft_model_path, forms_vec_file_path, vocab['forms']),
-            ft.load_embedding_weight_matrix(ft_model_path, lemmas_vec_file_path, vocab['lemmas']))
+    morpheme_forms_vec_file_path = vocab_dir_path / 'morpheme_forms.vec'
+    morpheme_lemmas_vec_file_path = vocab_dir_path / 'morpheme_lemmas.vec'
+    return (ft.load_embedding_weight_matrix(ft_model_path, chars_vec_file_path, morpheme_vocab['chars']),
+            ft.load_embedding_weight_matrix(ft_model_path, tokens_vec_file_path, morpheme_vocab['tokens']),
+            ft.load_embedding_weight_matrix(ft_model_path, morpheme_forms_vec_file_path, morpheme_vocab['forms']),
+            ft.load_embedding_weight_matrix(ft_model_path, morpheme_lemmas_vec_file_path, morpheme_vocab['lemmas']))
+
+
+def load_token_ft_emb(root_dir_path, ft_root_dir_path, token_vocab):
+    vocab_dir_path = root_dir_path / 'vocab'
+    ft_model_path = ft_root_dir_path / 'models/cc.he.300.bin'
+    chars_vec_file_path = vocab_dir_path / 'chars.vec'
+    tokens_vec_file_path = vocab_dir_path / 'tokens.vec'
+    token_forms_vec_file_path = vocab_dir_path / 'token_forms.vec'
+    token_lemmas_vec_file_path = vocab_dir_path / 'token_lemmas.vec'
+    return (ft.load_embedding_weight_matrix(ft_model_path, chars_vec_file_path, token_vocab['chars']),
+            ft.load_embedding_weight_matrix(ft_model_path, tokens_vec_file_path, token_vocab['tokens']),
+            ft.load_embedding_weight_matrix(ft_model_path, token_forms_vec_file_path, token_vocab['forms']),
+            ft.load_embedding_weight_matrix(ft_model_path, token_lemmas_vec_file_path, token_vocab['lemmas']))
 
 
 def _load_data_arrays(vocab, samples):
@@ -314,20 +336,19 @@ def save_data(root_dir_path):
 
 def save_ft_vec(root_dir_path, ft_root_dir_path):
     morpheme_vocab = _load_vocab(root_dir_path, 'morpheme')
-    _save_ft_emb(root_dir_path, ft_root_dir_path, morpheme_vocab)
+    token_vocab = _load_vocab(root_dir_path, 'token')
+    _save_ft_emb(root_dir_path, ft_root_dir_path, morpheme_vocab, token_vocab)
 
 
 def main():
     root_dir_path = Path.home() / 'dev/aseker00/modi'
     ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
-    partition = tb.load_lattices(root_dir_path, ['dev', 'test', 'train'])
-    # _save_token_dataset(root_dir_path, partition)
-    # _save_morpheme_dataset(root_dir_path, partition)
-    # morpheme_vocab = _load_vocab(root_dir_path, 'morpheme')
-    # _save_ft_emb(root_dir_path, ft_root_dir_path, morpheme_vocab)
-    token_vocab, token_tensors = load_token_dataset(root_dir_path, partition)
-    morpheme_vocab, morpheme_tensors = load_morpheme_dataset(root_dir_path, partition)
-    char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = load_ft_emb(root_dir_path, ft_root_dir_path, morpheme_vocab)
+    # save_data(root_dir_path)
+    save_ft_vec(root_dir_path, ft_root_dir_path)
+    # partition = tb.load_lattices(root_dir_path, ['dev', 'test', 'train'])
+    # token_vocab, token_tensors = load_token_dataset(root_dir_path, partition)
+    # morpheme_vocab, morpheme_tensors = load_morpheme_dataset(root_dir_path, partition)
+    # char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = load_ft_emb(root_dir_path, ft_root_dir_path, morpheme_vocab)
 
 
 if __name__ == '__main__':

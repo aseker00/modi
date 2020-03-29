@@ -13,7 +13,7 @@ ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
 
 partition = tb.load_lattices(root_dir_path, ['dev', 'test', 'train'])
 token_vocab, token_dataset = ds.load_token_dataset(root_dir_path, partition)
-char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = ds.load_ft_emb(root_dir_path, ft_root_dir_path, token_vocab)
+char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = ds.load_token_ft_emb(root_dir_path, ft_root_dir_path, token_vocab)
 
 train_dataset = token_dataset['train']
 dev_dataset = token_dataset['dev']
@@ -81,7 +81,6 @@ def run_batch(batch, tagger, optimizer):
     # keep track of the filtered tags so that we can reconstruct token level tags
     gold_tag_token_mask_idx = [mask.nonzero().squeeze(dim=1) for mask in gold_token_tag_seq_mask]
     gold_tag_token_mask_idx = torch.nn.utils.rnn.pad_sequence(gold_tag_token_mask_idx, batch_first=True)
-    # gold_tag_token_mask_idx = gold_tag_token_mask_idx * gold_tag_seq_mask
 
     # decoded tag sequence scores
     # stack pref, host, suff score tensors into [bs, seq_len, 3, tags] tensor
@@ -153,31 +152,6 @@ def run_epoch(epoch, phase, print_every, data, tagger, optimizer=None, max_steps
             decoded_tags = tagger.decode_crf(decoded_tag_scores, decoded_tag_mask)
         gold_token_tags = align_token_tags(gold_tags, gold_tag_idx, gold_tag_mask, token_seq_lengths, 3, tag2id)
         decoded_token_tags = align_token_tags(decoded_tags, decoded_tag_idx, decoded_tag_mask, token_seq_lengths, 3, tag2id)
-        # # Align tag sequence into token (pref, host, suff) sequence
-        # decoded_token_tags, gold_token_tags = [], []
-        # for j in range(token_seq_lengths.shape[0]):
-        #     # [num_tokens * 3] - (pref,host,suff) for each token
-        #     seq = torch.ones(token_seq_lengths[j] * 3, dtype=torch.long) * tag2id['_']
-        #     # gold tag indices in the token sequence
-        #     indices = gold_tag_idx[j][gold_tag_mask[j]]
-        #     # gold tag ids
-        #     tags = gold_tags[j][gold_tag_mask[j]]
-        #     # set tag ids in the token sequence
-        #     for idx, tid in zip(indices, tags):
-        #         seq[idx] = tid
-        #     gold_token_tags.append(seq)
-        #
-        #     # [num_tokens * 3] - (pref,host,suff) for each token
-        #     seq = torch.ones(token_seq_lengths[j] * 3, dtype=torch.long) * tag2id['_']
-        #     # decoded tag indices in the token sequence
-        #     indices = decoded_tag_idx[j][decoded_tag_mask[j]]
-        #     # decoded tags ids
-        #     tags = decoded_tags[j][decoded_tag_mask[j]]
-        #     # set tag ids in the token sequence
-        #     for idx, tid in zip(indices, tags):
-        #         seq[idx] = tid
-        #     decoded_token_tags.append(seq)
-
         decoded_token_tags = torch.nn.utils.rnn.pad_sequence(decoded_token_tags, batch_first=True)
         gold_token_tags = torch.nn.utils.rnn.pad_sequence(gold_token_tags, batch_first=True)
         decoded_token_tags_mask = decoded_token_tags != 0

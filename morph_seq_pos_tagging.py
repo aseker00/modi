@@ -1,3 +1,4 @@
+import random
 from collections import defaultdict
 from torch.optim.adamw import AdamW
 from torch.utils.data.dataloader import DataLoader
@@ -14,7 +15,7 @@ ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
 
 partition = tb.load_lattices(root_dir_path, ['dev', 'test', 'train'])
 morpheme_vocab, morpheme_dataset = ds.load_morpheme_dataset(root_dir_path, partition)
-char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = ds.load_ft_emb(root_dir_path, ft_root_dir_path, morpheme_vocab)
+char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = ds.load_morpheme_ft_emb(root_dir_path, ft_root_dir_path, morpheme_vocab)
 
 train_dataset = morpheme_dataset['train']
 dev_dataset = morpheme_dataset['dev']
@@ -65,33 +66,30 @@ def run_batch(batch, tagger, optimizer, teacher_forcing):
         for i in range(token_tags.shape[0]):
             token_tags[i][mask_idx[i]] = tag2id['<EOT>']
     gold_token_tag_seq_mask = gold_token_tag_seq != 0
-    gold_tag_seq = [token_tags[:num_tokens][mask[:num_tokens]] for token_tags, mask, num_tokens in zip(gold_token_tag_seq, gold_token_tag_seq_mask, batch_token_lengths)]
-    gold_tag_seq = torch.nn.utils.rnn.pad_sequence(gold_tag_seq, batch_first=True)
-    gold_tag_seq_mask = gold_tag_seq != 0
+    gold_token_tag_seq = [token_tags[:num_tokens][mask[:num_tokens]] for token_tags, mask, num_tokens in zip(gold_token_tag_seq, gold_token_tag_seq_mask, batch_token_lengths)]
+    gold_token_tag_seq = torch.nn.utils.rnn.pad_sequence(gold_token_tag_seq, batch_first=True)
+    gold_token_tag_seq_mask = gold_token_tag_seq != 0
     if optimizer:
         if teacher_forcing is not None and random.uniform(0, 1) < teacher_forcing:
-            decoded_tag_scores = tagger(token_seq, token_char_seq, token_char_lengths, batch_token_lengths, num_token_tags, gold_tag_seq, True)
+            decoded_tag_scores = tagger(token_seq, token_char_seq, token_char_lengths, batch_token_lengths, num_token_tags, gold_token_tag_seq, True)
         else:
-            decoded_tag_scores = tagger(token_seq, token_char_seq, token_char_lengths, batch_token_lengths, num_token_tags, gold_tag_seq, False)
+            decoded_tag_scores = tagger(token_seq, token_char_seq, token_char_lengths, batch_token_lengths, num_token_tags, gold_token_tag_seq, False)
     else:
         decoded_tag_scores = tagger(token_seq, token_char_seq, token_char_lengths, batch_token_lengths, num_token_tags)
     # morpheme tag level sequence loss - align scores and gold tags and mask
-    if decoded_tag_scores.shape[1] < gold_tag_seq.shape[1]:
-        fill_len = gold_tag_seq.shape[1] - decoded_tag_scores.shape[1]
+    if decoded_tag_scores.shape[1] < gold_token_tag_seq.shape[1]:
+        fill_len = gold_token_tag_seq.shape[1] - decoded_tag_scores.shape[1]
         decoded_tag_scores = F.pad(decoded_tag_scores, (0, 0, 0, fill_len))
-    elif gold_tag_seq.shape[1] < decoded_tag_scores.shape[1]:
-        fill_len = decoded_tag_scores.shape[1] - gold_tag_seq.shape[1]
-        gold_tag_seq = F.pad(gold_tag_seq, (0, fill_len))
-        gold_tag_seq_mask = F.pad(gold_tag_seq_mask, (0, fill_len))
-    tag_loss = tagger.loss(decoded_tag_scores, gold_tag_seq, gold_tag_seq_mask)
-    # TODO: compute crf loss
-
-
+    elif gold_token_tag_seq.shape[1] < decoded_tag_scores.shape[1]:
+        fill_len = decoded_tag_scores.shape[1] - gold_token_tag_seq.shape[1]
+        gold_token_tag_seq = F.pad(gold_token_tag_seq, (0, fill_len))
+        gold_token_tag_seq_mask = F.pad(gold_token_tag_seq_mask, (0, fill_len))
+    tag_loss = tagger.loss(decoded_tag_scores, gold_token_tag_seq, gold_token_tag_seq_mask)
     if optimizer:
         tag_loss.backward()
         optimizer.step()
         optimizer.zero_grad()
-    return decoded_tag_scores, gold_tag_seq, gold_tag_seq_mask, tag_loss, token_seq, batch_token_lengths, num_token_tags
+    return decoded_tag_scores, gold_token_tag_seq, gold_token_tag_seq_mask, tag_loss, token_seq, batch_token_lengths, num_token_tags
 
 
 def run_epoch(epoch, phase, print_every, data, tagger, optimizer=None, teacher_forcing=None, max_num_batches=None):

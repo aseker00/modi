@@ -12,7 +12,7 @@ root_dir_path = Path.home() / 'dev/aseker00/modi'
 ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
 partition = tb.load_lattices(root_dir_path, ['dev', 'test', 'train'])
 token_vocab, token_dataset = ds.load_token_dataset(root_dir_path, partition)
-char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = ds.load_ft_emb(root_dir_path, ft_root_dir_path, token_vocab)
+char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = ds.load_token_ft_emb(root_dir_path, ft_root_dir_path, token_vocab)
 
 train_dataset = token_dataset['train']
 dev_dataset = token_dataset['dev']
