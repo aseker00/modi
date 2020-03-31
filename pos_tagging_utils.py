@@ -27,10 +27,10 @@ def to_samples(pred_tag_seq, gold_tag_seq, pred_tag_seq_mask, gold_tag_seq_mask,
     return pred_samples, gold_samples
 
 
-def print_sample(pred, gold):
+def print_sample(pred, gold, ignore_lables):
     print([p for p in pred[0]])
-    print([p for p in pred[1] if p != '<PAD>'])
-    print([g for g in gold[1] if g != '<PAD>'])
+    print([p for p in pred[1] if p not in ignore_lables])
+    print([g for g in gold[1] if g not in ignore_lables])
 
 
 def batch_mask_select(x, mask):

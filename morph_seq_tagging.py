@@ -189,13 +189,13 @@ def run_epoch(epoch, phase, print_every, data, tagger, optimizer=None, teacher_f
         epoch_loss += tag_loss
         if step % print_every == 0:
             print(f'{phase} epoch {epoch} step {step} loss: {print_loss / print_every}')
-            print_sample(print_samples[-1][0][-1], print_samples[-1][1][-1])
+            print_sample(print_samples[-1][0][-1], print_samples[-1][1][-1], ['<PAD>', '<EOT>', '_'])
             print_loss = 0
             print_samples = []
         if max_num_batches and step == max_num_batches:
             break
     print(f'{phase} epoch {epoch} total loss: {epoch_loss / len(data)}')
-    print_scores(epoch_samples, ['_', '<PAD>', '<EOT>'])
+    print_scores(epoch_samples, ['<PAD>', '<EOT>', '_'])
 
 
 for lr in [1e-2]:
