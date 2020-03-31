@@ -1,5 +1,3 @@
-import random
-import numpy as np
 import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence, pad_sequence
@@ -61,12 +59,10 @@ class TokenRNN(nn.Module):
         sorted_lengths, sorted_perm_idx = token_lengths.sort(0, descending=True)
         packed_seq = pack_padded_sequence(embed_token_seq[sorted_perm_idx], sorted_lengths, batch_first=True)
         packed_outputs, packed_hidden_state = self.rnn(packed_seq)
-        padded_output, seq_lengths = pad_packed_sequence(packed_outputs, batch_first=True,
-                                                         total_length=embed_token_seq.shape[1])
+        padded_output, seq_lengths = pad_packed_sequence(packed_outputs, batch_first=True, total_length=embed_token_seq.shape[1])
         _, reflect_sorted_perm_idx = sorted_perm_idx.sort()
         token_output = padded_output[reflect_sorted_perm_idx]
-        hidden_state = tuple(torch.stack([layer[reflect_sorted_perm_idx]
-                                          for layer in hs], dim=0) for hs in packed_hidden_state)
+        hidden_state = tuple(torch.stack([layer[reflect_sorted_perm_idx] for layer in hs], dim=0) for hs in packed_hidden_state)
         return token_output, hidden_state
 
     @property
@@ -183,7 +179,7 @@ class Seq2SeqClassifier(nn.Module):
         self.crf = CRF(decoder.num_tags, batch_first=True)
         self.device = device
 
-    def forward(self, token_seq, token_char_seq, token_char_lengths, token_lengths, max_token_tags_num, gold_tag_seq=None, teacher_forcing=None):
+    def forward(self, token_seq, token_char_seq, token_char_lengths, token_lengths, max_token_tags_num, gold_tag_seq=None):
         embed_tokens = self.enc_emb(token_seq, token_char_seq, token_char_lengths)
         enc_tokens, enc_hidden_state = self.encoder(embed_tokens, token_lengths)
         batch_size = embed_tokens.shape[0]
@@ -193,12 +189,12 @@ class Seq2SeqClassifier(nn.Module):
         dec_c = enc_c[-self.decoder.rnn.num_layers:].transpose(dim0=2, dim1=3).reshape(self.decoder.rnn.num_layers, -1, batch_size).transpose(dim0=1, dim1=2).contiguous()
         dec_hidden_state = (dec_h, dec_c)
         if self.decoder.rnn.input_size == self.dec_emb.embedding_dim:
-            tag_scores = self._forward_tag_decoding(dec_hidden_state, token_lengths, max_token_tags_num * token_seq.shape[1], gold_tag_seq, teacher_forcing)
+            tag_scores = self._forward_tag_decoding(dec_hidden_state, token_lengths, max_token_tags_num * token_seq.shape[1], gold_tag_seq)
         else:
-            tag_scores = self._forward_tag_token_decoding(embed_tokens, dec_hidden_state, token_lengths, max_token_tags_num * token_seq.shape[1], gold_tag_seq, teacher_forcing)
+            tag_scores = self._forward_tag_token_decoding(embed_tokens, dec_hidden_state, token_lengths, max_token_tags_num * token_seq.shape[1], gold_tag_seq)
         return torch.stack(tag_scores, dim=1)
 
-    def _forward_tag_decoding(self, dec_hidden_state, token_lengths, max_tag_seq_len, gold_tag_seq, teacher_forcing):
+    def _forward_tag_decoding(self, dec_hidden_state, token_lengths, max_tag_seq_len, gold_tag_seq):
         tag_scores = []
         batch_size = token_lengths.shape[0]
         embed_tag = self.dec_emb(torch.ones((batch_size, 1), dtype=torch.long, device=self.device))
@@ -206,7 +202,7 @@ class Seq2SeqClassifier(nn.Module):
         for i in range(max_tag_seq_len):
             dec_tag_scores, dec_hidden_state = self.decoder(embed_tag, dec_hidden_state)
             tag_scores.append(dec_tag_scores.squeeze(dim=1))
-            if gold_tag_seq is None or not teacher_forcing:
+            if gold_tag_seq is None:
                 pred_tag = self.decode(dec_tag_scores)
             else:
                 pred_tag = gold_tag_seq[:, i].unsqueeze(dim=1)
@@ -219,7 +215,7 @@ class Seq2SeqClassifier(nn.Module):
             embed_tag = self.dec_emb(pred_tag)
         return tag_scores
 
-    def _forward_tag_token_decoding(self, embed_tokens, dec_hidden_state, token_lengths, max_tag_seq_len, gold_tag_seq, teacher_forcing):
+    def _forward_tag_token_decoding(self, embed_tokens, dec_hidden_state, token_lengths, max_tag_seq_len, gold_tag_seq):
         tag_scores = []
         batch_size = token_lengths.shape[0]
         embed_tag = self.dec_emb(torch.ones((batch_size, 1), dtype=torch.long, device=self.device))
@@ -230,7 +226,7 @@ class Seq2SeqClassifier(nn.Module):
             embed_input = torch.cat([embed_token, embed_tag], dim=2)
             dec_tag_scores, dec_hidden_state = self.decoder(embed_input, dec_hidden_state)
             tag_scores.append(dec_tag_scores.squeeze(dim=1))
-            if gold_tag_seq is None or not teacher_forcing:
+            if gold_tag_seq is None:
                 pred_tag = self.decode(dec_tag_scores)
             else:
                 pred_tag = gold_tag_seq[:, i].unsqueeze(dim=1)
@@ -244,9 +240,6 @@ class Seq2SeqClassifier(nn.Module):
         return tag_scores
 
     def loss(self, label_scores, gold_labels, mask):
-        return self.decoder.loss(label_scores, gold_labels, mask)
-
-    def loss_et(self, label_scores, gold_labels, mask):
         return self.decoder.loss(label_scores, gold_labels, mask)
 
     def decode(self, label_scores):

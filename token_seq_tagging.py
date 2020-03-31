@@ -75,12 +75,11 @@ def run_batch(batch, tagger, optimizer):
     gold_token_tag_seq_mask = gold_tag_seq != tag2id['_']
     gold_tag_seq = [tags[mask] for tags, mask in zip(gold_tag_seq, gold_token_tag_seq_mask)]
     gold_tag_seq = torch.nn.utils.rnn.pad_sequence(gold_tag_seq, batch_first=True)
-    # set new 0 pad mask
-    gold_tag_seq_mask = gold_tag_seq != 0
-
     # keep track of the filtered tags so that we can reconstruct token level tags
     gold_tag_token_mask_idx = [mask.nonzero().squeeze(dim=1) for mask in gold_token_tag_seq_mask]
     gold_tag_token_mask_idx = torch.nn.utils.rnn.pad_sequence(gold_tag_token_mask_idx, batch_first=True)
+    # set new pad mask
+    gold_tag_seq_mask = gold_tag_seq != 0
 
     # decoded tag sequence scores
     # stack pref, host, suff score tensors into [bs, seq_len, 3, tags] tensor
@@ -94,7 +93,19 @@ def run_batch(batch, tagger, optimizer):
     decoded_tag_seq = decoded_token_tag_seq.view(batch_size, -1)
     # filter out both '_' tags as well as '<PAD>' and re-pad both decoded tags and scores.
     # Filtering out '<PAD>' is required later when we we generate the tag mask based on the filtered decoded tag seq
+    # (I think <PAD> filtering is required because the crf loss mask mustn't have a <PAD> in it's initial position:
+    # Traceback (most recent call last):
+    #   File "/Users/Amit/dev/aseker00/modi/morph_seq_pos_tagging.py", line 155, in run_epoch
+    #     decoded_tag_seq = tagger.decode_crf(decoded_tag_scores, decoded_tag_seq_mask)
+    #   File "/Users/Amit/dev/aseker00/modi/models.py", line 253, in decode_crf
+    #     decoded_classes = self.crf.decode(emissions=label_scores, mask=mask)
+    #   File "/Users/Amit/miniconda3/envs/modi-env/lib/python3.7/site-packages/torchcrf/__init__.py", line 131, in decode
+    #     self._validate(emissions, mask=mask)
+    #   File "/Users/Amit/miniconda3/envs/modi-env/lib/python3.7/site-packages/torchcrf/__init__.py", line 167, in _validate
+    #     raise ValueError('mask of the first timestep must all be on')
+    # ValueError: mask of the first timestep must all be on)
     decoded_token_tag_seq_mask = (decoded_tag_seq != tag2id['_']) & (decoded_tag_seq != tag2id['<PAD>'])
+    # decoded_token_tag_seq_mask = decoded_tag_seq != tag2id['_']
     decoded_tag_scores = [tags[mask] for tags, mask in zip(decoded_tag_scores, decoded_token_tag_seq_mask)]
     decoded_tag_scores = torch.nn.utils.rnn.pad_sequence(decoded_tag_scores, batch_first=True)
     decoded_tag_seq = [tags[mask] for tags, mask in zip(decoded_tag_seq, decoded_token_tag_seq_mask)]
@@ -109,11 +120,11 @@ def run_batch(batch, tagger, optimizer):
     # align decoded scores and gold tags/mask before computing loss
     decoded_len = decoded_tag_scores.shape[1]
     gold_len = gold_tag_seq.shape[1]
-    if decoded_tag_scores.shape[1] < gold_tag_seq.shape[1]:
-        fill_len = gold_tag_seq.shape[1] - decoded_tag_scores.shape[1]
+    if decoded_len < gold_len:
+        fill_len = gold_len - decoded_len
         decoded_tag_scores = F.pad(decoded_tag_scores, (0, 0, 0, fill_len))
-    elif gold_tag_seq.shape[1] < decoded_tag_scores.shape[1]:
-        fill_len = decoded_tag_scores.shape[1] - gold_tag_seq.shape[1]
+    elif gold_len < decoded_len:
+        fill_len = decoded_len - gold_len
         gold_tag_seq = F.pad(gold_tag_seq, (0, fill_len))
         gold_tag_seq_mask = F.pad(gold_tag_seq_mask, (0, fill_len))
     # compute loss
