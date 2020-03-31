@@ -36,7 +36,7 @@ decoder_tag_token_rnn = nn.LSTM(tag_emb.embedding_dim + token_emb.embedding_dim,
                                 dropout=0.0, batch_first=True)
 morph_decoder = MorphemeDecoder(decoder_tag_token_rnn, 0.0, num_tags, tag2id['<EOT>'])
 model = Seq2SeqClassifier(token_emb, token_encoder, tag_emb, morph_decoder, device)
-if device:
+if device is not None:
     model.to(device)
 
 
@@ -112,7 +112,7 @@ def mask_token_tags(tags, token_lengths):
             idx = et_indices[b][l - 1]
         else:
             idx = max_tag_len - 1
-        tag_masks.append(torch.arange(max_tag_len) <= idx)
+        tag_masks.append(torch.arange(max_tag_len, device=device) <= idx)
     return torch.stack(tag_masks, dim=0)
 
 
@@ -189,13 +189,13 @@ def run_epoch(epoch, phase, print_every, data, tagger, optimizer=None, teacher_f
         epoch_loss += tag_loss
         if step % print_every == 0:
             print(f'{phase} epoch {epoch} step {step} loss: {print_loss / print_every}')
-            print_sample(print_samples[-1][0][-1], print_samples[-1][1][-1])
+            print_sample(print_samples[-1][0][-1], print_samples[-1][1][-1], ['<PAD>', '<EOT>', '_'])
             print_loss = 0
             print_samples = []
         if max_num_batches and step == max_num_batches:
             break
     print(f'{phase} epoch {epoch} total loss: {epoch_loss / len(data)}')
-    print_scores(epoch_samples, ['_', '<PAD>', '<EOT>'])
+    print_scores(epoch_samples, ['<PAD>', '<EOT>', '_'])
 
 
 for lr in [1e-2]:
