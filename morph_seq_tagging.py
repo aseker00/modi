@@ -28,14 +28,14 @@ device = None
 num_tags = len(morpheme_vocab['tags'])
 tag2id = {v: i for i, v in enumerate(morpheme_vocab['tags'])}
 token_char_emb = TokenCharRNNEmbedding(char_ft_emb, 300, 1, 0.0)
-token_emb = TokenEmbedding(token_ft_emb, token_char_emb, 0.7)
+token_emb = TokenEmbedding(token_ft_emb, token_char_emb, 0.0)
 token_encoder = TokenRNN(token_emb.embedding_dim, 300, 1, 0.0)
 tag_emb = nn.Embedding(num_embeddings=num_tags, embedding_dim=100, padding_idx=0)
 decoder_tag_rnn = nn.LSTM(tag_emb.embedding_dim, token_encoder.hidden_size, 1, dropout=0.0, batch_first=True)
 decoder_tag_token_rnn = nn.LSTM(tag_emb.embedding_dim + token_emb.embedding_dim, token_encoder.hidden_size, 1,
                                 dropout=0.0, batch_first=True)
 morph_decoder = MorphemeDecoder(decoder_tag_token_rnn, 0.0, num_tags, tag2id['<EOT>'])
-model = Seq2SeqClassifier(token_emb, token_encoder, tag_emb, morph_decoder, device)
+model = Seq2SeqClassifier(token_emb, 0.7, token_encoder, tag_emb, morph_decoder, device)
 if device is not None:
     model.to(device)
 

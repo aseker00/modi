@@ -151,6 +151,7 @@ class MorphemeDecoder(nn.Module):
     def forward(self, embed_input_seq, hidden_state):
         outputs, hidden_state = self.rnn(embed_input_seq, hidden_state)
         outputs = self.dropout(outputs)
+        outputs = torch.tanh(outputs)
         scores = self.output(outputs)
         return scores, hidden_state
 
@@ -170,9 +171,10 @@ class MorphemeDecoder(nn.Module):
 
 class Seq2SeqClassifier(nn.Module):
 
-    def __init__(self, enc_emb, encoder, dec_emb, decoder, device=None):
+    def __init__(self, enc_emb, enc_emb_dropout, encoder, dec_emb, decoder, device=None):
         super(Seq2SeqClassifier, self).__init__()
         self.enc_emb = enc_emb
+        self.enc_emb_dropout = nn.Dropout(enc_emb_dropout)
         self.encoder = encoder
         self.dec_emb = dec_emb
         self.decoder = decoder
@@ -181,7 +183,8 @@ class Seq2SeqClassifier(nn.Module):
 
     def forward(self, token_seq, token_char_seq, token_char_lengths, token_lengths, max_token_tags_num, gold_tag_seq=None):
         embed_tokens = self.enc_emb(token_seq, token_char_seq, token_char_lengths)
-        enc_tokens, enc_hidden_state = self.encoder(embed_tokens, token_lengths)
+        embed_tokens = self.enc_emb_dropout(embed_tokens)
+        _, enc_hidden_state = self.encoder(embed_tokens, token_lengths)
         batch_size = embed_tokens.shape[0]
         enc_h = enc_hidden_state[0].view(self.encoder.rnn.num_layers, 2, batch_size, self.encoder.rnn.hidden_size)
         enc_c = enc_hidden_state[1].view(self.encoder.rnn.num_layers, 2, batch_size, self.encoder.rnn.hidden_size)
@@ -225,6 +228,7 @@ class Seq2SeqClassifier(nn.Module):
             embed_token = torch.stack(embed_token, dim=0).unsqueeze(dim=1)
             embed_input = torch.cat([embed_token, embed_tag], dim=2)
             dec_tag_scores, dec_hidden_state = self.decoder(embed_input, dec_hidden_state)
+            dec_tag_scores = torch.tanh(dec_tag_scores)
             tag_scores.append(dec_tag_scores.squeeze(dim=1))
             if gold_tag_seq is None:
                 pred_tag = self.decode(dec_tag_scores)
