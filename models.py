@@ -89,7 +89,8 @@ class TokenClassifier(nn.Module):
         embed_input_seq = self.token_emb(*input_seq)
         outputs, _ = self.token_rnn(embed_input_seq, input_lengths)
         outputs = self.dropout(outputs)
-        outputs = torch.tanh(outputs)
+        # outputs = torch.tanh(outputs)
+        outputs = torch.relu(outputs)
         pref_scores = self.pref_output(outputs)
         host_scores = self.host_output(outputs)
         suff_scores = self.suff_output(outputs)
@@ -97,6 +98,12 @@ class TokenClassifier(nn.Module):
         # tag_scores = (tag_scores.view(tag_scores.shape[0], tag_scores.shape[1] * tag_scores.shape[2], -1)
         #               .transpose(dim0=1, dim1=2).contiguous()
         #               .view(tag_scores.shape[0], tag_scores.shape[1] * tag_scores.shape[2], -1))
+        # pref_scores = torch.tanh(pref_scores)
+        # host_scores = torch.tanh(host_scores)
+        # suff_scores = torch.tanh(suff_scores)
+        # pref_scores = torch.relu(pref_scores)
+        # host_scores = torch.relu(host_scores)
+        # suff_scores = torch.relu(suff_scores)
         return pref_scores, host_scores, suff_scores
 
     def loss(self, label_scores, gold_labels, mask):
@@ -152,7 +159,10 @@ class MorphemeDecoder(nn.Module):
         outputs, hidden_state = self.rnn(embed_input_seq, hidden_state)
         outputs = self.dropout(outputs)
         outputs = torch.tanh(outputs)
+        # outputs = torch.relu(outputs)
         scores = self.output(outputs)
+        # scores = torch.tanh(scores)
+        # scores = torch.relu(scores)
         return scores, hidden_state
 
     def loss(self, label_scores, gold_labels, mask):
@@ -223,15 +233,16 @@ class Seq2SeqClassifier(nn.Module):
         batch_size = token_lengths.shape[0]
         embed_tag = self.dec_emb(torch.ones((batch_size, 1), dtype=torch.long, device=self.device))
         cur_token_idx = torch.zeros(batch_size, dtype=torch.long, device=self.device)
+        token_indices = torch.arange(embed_tokens.shape[1], device=self.device).repeat(batch_size).view(batch_size, -1)
         for i in range(max_tag_seq_len):
+            token_masks = token_indices == cur_token_idx.unsqueeze(1)
             embed_token = [t[idx] if idx < t.shape[0] else t[-1] for t, idx in zip(embed_tokens, cur_token_idx)]
             embed_token = torch.stack(embed_token, dim=0).unsqueeze(dim=1)
             embed_input = torch.cat([embed_token, embed_tag], dim=2)
             dec_tag_scores, dec_hidden_state = self.decoder(embed_input, dec_hidden_state)
-            dec_tag_scores = torch.tanh(dec_tag_scores)
             tag_scores.append(dec_tag_scores.squeeze(dim=1))
             if gold_tag_seq is None:
-                pred_tag = self.decode(dec_tag_scores)
+                pred_tag = self.decoder.decode(dec_tag_scores)
             else:
                 pred_tag = gold_tag_seq[:, i].unsqueeze(dim=1)
             pred_et_tag_mask = pred_tag.squeeze(dim=1) == self.decoder.et_tag_id
@@ -242,12 +253,6 @@ class Seq2SeqClassifier(nn.Module):
                 break
             embed_tag = self.dec_emb(pred_tag)
         return tag_scores
-
-    def loss(self, label_scores, gold_labels, mask):
-        return self.decoder.loss(label_scores, gold_labels, mask)
-
-    def decode(self, label_scores):
-        return self.decoder.decode(label_scores)
 
     def loss_crf(self, label_scores, gold_labels, mask):
         log_likelihood = self.crf(emissions=label_scores, tags=gold_labels, mask=mask, reduction='token_mean')

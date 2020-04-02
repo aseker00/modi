@@ -39,13 +39,13 @@ def batch_mask_select(x, mask):
     return y, z
 
 
-def batch_re_mask_select(x, y, z, pad_id, re_id):
+def batch_re_mask_select(x, y, z, pad_id, re_id, add_extra):
     rx = []
     for sample, indices, mask in zip(x, y, z):
         r = [pad_id] * indices.shape[0]
         indices_mask = mask.nonzero().squeeze(dim=1)
         indices_len = indices[indices_mask[-1]].item()
-        r[:(indices_len + 2)] = [re_id] * (indices_len + 2)
+        r[:(indices_len + 1 + add_extra)] = [re_id] * (indices_len + 1 + add_extra)
         for v, idx in zip(sample, indices_mask):
             r[indices[idx]] = v.item()
         rx.append(torch.tensor(r, dtype=torch.long))
@@ -70,79 +70,66 @@ def batch_expand_tokens(x, token_size, et_id, ex_id):
     return torch.nn.utils.rnn.pad_sequence(ex, batch_first=True)
 
 
-def align_tags(tags, tag_idx, tag2id):
-    aligned_tags = []
-    for i in range(tags.shape[0]):
-        seq = []
-        # max_tag_idx = tag_idx[i][tag_mask[i]][-1]
-        max_tag_idx = tag_idx[i].shape[0]
-        cur_tag_idx = 0
-        for j in range(max_tag_idx):
-            idx = tag_idx[i][cur_tag_idx].item()
-            if j == idx:
-                if cur_tag_idx < len(tags[i]):
-                    seq.append(tags[i][cur_tag_idx].item())
-                cur_tag_idx += 1
-            else:
-                seq.append(tag2id['<EOT>'])
-        aligned_tags.append(torch.tensor(seq, dtype=torch.long))
-    return aligned_tags
+# def align_tags(tags, tag_idx, tag2id):
+#     aligned_tags = []
+#     for i in range(tags.shape[0]):
+#         seq = []
+#         # max_tag_idx = tag_idx[i][tag_mask[i]][-1]
+#         max_tag_idx = tag_idx[i].shape[0]
+#         cur_tag_idx = 0
+#         for j in range(max_tag_idx):
+#             idx = tag_idx[i][cur_tag_idx].item()
+#             if j == idx:
+#                 if cur_tag_idx < len(tags[i]):
+#                     seq.append(tags[i][cur_tag_idx].item())
+#                 cur_tag_idx += 1
+#             else:
+#                 seq.append(tag2id['<EOT>'])
+#         aligned_tags.append(torch.tensor(seq, dtype=torch.long))
+#     return aligned_tags
 
 
-def batch_mask_select(x, mask):
-    y = torch.nn.utils.rnn.pad_sequence([a[m] for a, m in zip(x, mask)], batch_first=True)
-    z = torch.nn.utils.rnn.pad_sequence([m.nonzero().squeeze(dim=1) for m in mask], batch_first=True)
-    return y, z
+# def batch_mask_select(x, mask):
+#     y = torch.nn.utils.rnn.pad_sequence([a[m] for a, m in zip(x, mask)], batch_first=True)
+#     z = torch.nn.utils.rnn.pad_sequence([m.nonzero().squeeze(dim=1) for m in mask], batch_first=True)
+#     return y, z
 
 
-def batch_re_mask_select(x, y, z, pad_id, re_id):
-    rx = []
-    for sample, indices, mask in zip(x, y, z):
-        r = [pad_id] * indices.shape[0]
-        indices_mask = mask.nonzero().squeeze(dim=1)
-        indices_len = indices[indices_mask[-1]].item()
-        r[:(indices_len + 2)] = [re_id] * (indices_len + 2)
-        for v, idx in zip(sample, indices_mask):
-            r[indices[idx]] = v.item()
-        rx.append(torch.tensor(r, dtype=torch.long))
-    return torch.nn.utils.rnn.pad_sequence(rx, batch_first=True)
+# def batch_expand_tokens(x, token_size, et_id, ex_id):
+#     ex = []
+#     for sample in x:
+#         e = []
+#         for v in sample:
+#             if v.item() == 0:
+#                 continue
+#             e.append(v.item())
+#             if v.item() == et_id:
+#                 fill_len = (len(e) // token_size + 1) * token_size - len(e)
+#                 for i in range(fill_len):
+#                     e.append(ex_id)
+#             elif len(e) % token_size == 0:
+#                 e.append(et_id)
+#         ex.append(torch.tensor(e, dtype=torch.long))
+#     return torch.nn.utils.rnn.pad_sequence(ex, batch_first=True)
 
 
-def batch_expand_tokens(x, token_size, et_id, ex_id):
-    ex = []
-    for sample in x:
-        e = []
-        for v in sample:
-            if v.item() == 0:
-                continue
-            e.append(v.item())
-            if v.item() == et_id:
-                fill_len = (len(e) // token_size + 1) * token_size - len(e)
-                for i in range(fill_len):
-                    e.append(ex_id)
-            elif len(e) % token_size == 0:
-                e.append(et_id)
-        ex.append(torch.tensor(e, dtype=torch.long))
-    return torch.nn.utils.rnn.pad_sequence(ex, batch_first=True)
-
-
-def align_tags(tags, tag_idx, tag2id):
-    aligned_tags = []
-    for i in range(tags.shape[0]):
-        seq = []
-        # max_tag_idx = tag_idx[i][tag_mask[i]][-1]
-        max_tag_idx = tag_idx[i].shape[0]
-        cur_tag_idx = 0
-        for j in range(max_tag_idx):
-            idx = tag_idx[i][cur_tag_idx].item()
-            if j == idx:
-                if cur_tag_idx < len(tags[i]):
-                    seq.append(tags[i][cur_tag_idx].item())
-                cur_tag_idx += 1
-            else:
-                seq.append(tag2id['<EOT>'])
-        aligned_tags.append(torch.tensor(seq, dtype=torch.long))
-    return aligned_tags
+# def align_tags(tags, tag_idx, tag2id):
+#     aligned_tags = []
+#     for i in range(tags.shape[0]):
+#         seq = []
+#         # max_tag_idx = tag_idx[i][tag_mask[i]][-1]
+#         max_tag_idx = tag_idx[i].shape[0]
+#         cur_tag_idx = 0
+#         for j in range(max_tag_idx):
+#             idx = tag_idx[i][cur_tag_idx].item()
+#             if j == idx:
+#                 if cur_tag_idx < len(tags[i]):
+#                     seq.append(tags[i][cur_tag_idx].item())
+#                 cur_tag_idx += 1
+#             else:
+#                 seq.append(tag2id['<EOT>'])
+#         aligned_tags.append(torch.tensor(seq, dtype=torch.long))
+#     return aligned_tags
 
 
 def align_token_tags(tags, tag_idx, tag_mask, token_lengths, max_token_tags, tag2id):

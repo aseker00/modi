@@ -18,136 +18,96 @@ char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = ds.load_token_ft_emb(root
 train_dataset = token_dataset['train']
 dev_dataset = token_dataset['dev']
 test_dataset = token_dataset['test']
-train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-dev_dataloader = DataLoader(dev_dataset, batch_size=32)
-test_dataloader = DataLoader(test_dataset, batch_size=32)
+train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True)
+dev_dataloader = DataLoader(dev_dataset, batch_size=1)
+test_dataloader = DataLoader(test_dataset, batch_size=1)
 
+
+device = None
 num_tags = len(token_vocab['tags'])
 tag2id = {v: i for i, v in enumerate(token_vocab['tags'])}
-token_char_emb = TokenCharRNNEmbedding(char_ft_emb, 300, 1, 0.0)
+token_char_emb = TokenCharRNNEmbedding(char_ft_emb, 300, 32, 0.0)
 token_emb = TokenEmbedding(token_ft_emb, token_char_emb, 0.7)
 token_encoder = TokenRNN(token_emb.embedding_dim, 300, 1, 0.0)
 token_classifier = TokenClassifier(token_emb, token_encoder, 0.0, num_tags)
 model = TokenMorphSeqClassifier(token_classifier)
-device = None
+if device is not None:
+    model.to(device)
+
+
+def score_tokens(tokens, chars, char_lengths, token_lengths, tags, tagger):
+    batch_size = tokens.shape[0]
+    max_len = token_lengths.max()
+    tokens = tokens[:, :max_len].contiguous()
+    token_indices = torch.arange(max_len, device=device).repeat(batch_size).view(batch_size, -1)
+    token_masks = token_indices < token_lengths.unsqueeze(1)
+    max_char_len = char_lengths.max()
+    chars = chars[:, :max_len, :max_char_len].contiguous()
+    char_lengths = char_lengths[:, :max_len].contiguous()
+    tags = tags[:, :max_len].contiguous()
+    inputs = (tokens, chars, char_lengths)
+    scores = tagger(inputs, token_lengths)
+    losses = tagger.token_classifier.loss(scores, tags, token_masks)
+    return scores, tags, tokens, losses
+
+
+def score_tags(token_scores, gold_token_tags, tagger):
+    batch_size = gold_token_tags.shape[0]
+
+    # reshape [bs, seq_len, 3] tensor (last dimension represents pref,host,suff) into [bs, 3*seq_len]
+    gold_token_tags = gold_token_tags.view(batch_size, -1)
+    # Filter out _ tags
+    gold_token_masks = gold_token_tags != tag2id['_']
+    gold_tags, gold_indices = batch_mask_select(gold_token_tags, gold_token_masks)
+    gold_masks = gold_tags != 0
+
+    token_tags = tagger.token_classifier.decode(token_scores)
+    token_tags = token_tags.reshape((batch_size, -1))
+    token_masks = token_tags != tag2id['_']
+    # stack pref, host, suff score tensors into [bs, seq_len, 3, tags] tensor
+    # reshape [bs, seq_len, 3, tags] into [bs, 3*seq_len, tags]
+    token_scores = torch.stack(token_scores, dim=2).reshape((batch_size, -1, token_scores[0].shape[-1]))
+    tag_scores, tag_indices = batch_mask_select(token_scores, token_masks)
+    tags, _ = batch_mask_select(token_tags, token_masks)
+    # tags = [tags[mask] for tags, mask in zip(token_tags, token_masks)]
+    # tags = torch.nn.utils.rnn.pad_sequence(tags, batch_first=True)
+    tag_masks = tags != tag2id['<PAD>']
+    # ValueError: mask of the first timestep must all be on
+    tag_masks[:, 0] = True
+    tag_len = tag_scores.shape[1]
+    gold_len = gold_tags.shape[1]
+    fill_len = gold_len - tag_len
+    if fill_len > 0:
+        tag_scores = F.pad(tag_scores, [0, 0, 0, fill_len])
+        tag_masks = F.pad(tag_masks, [0, fill_len])
+        tag_indices = F.pad(tag_indices, [0, fill_len])
+    elif fill_len < 0:
+        gold_tags = F.pad(gold_tags, [0, -fill_len])
+        gold_masks = F.pad(gold_masks, [0, -fill_len])
+        gold_indices = F.pad(gold_indices, [0, -fill_len])
+    loss = tagger.loss_crf(tag_scores, gold_tags, gold_masks)
+    return tag_scores, tag_indices, tag_masks, gold_tags, gold_indices, gold_masks, loss
 
 
 def run_batch(batch, tagger, optimizer):
     batch = tuple(t.to(device) for t in batch)
-    batch_token_seq = batch[0]
-    batch_token_lengths = batch[1]
-    batch_char_seq = batch[2]
-    batch_char_lengths = batch[3]
-    batch_tag_seq = batch[4][:, :, 6:9]
+    tokens = batch[0]
+    token_lengths = batch[1]
+    chars = batch[2]
+    char_lengths = batch[3]
+    tags = batch[4][:, :, 6:9]
 
-    ## 1. Token level tagging
-    # token sequences
-    max_token_seq = batch_token_lengths.max()
-    token_seq = batch_token_seq[:, :max_token_seq].contiguous()
-    batch_size = token_seq.shape[0]
-    seq_lengths = token_seq.shape[1]
-    token_seq_idx = torch.arange(seq_lengths, device=device).repeat(batch_size).view(batch_size, -1)
-    token_seq_mask = token_seq_idx < batch_token_lengths.unsqueeze(1)
-
-    # token char sequences
-    max_char_seq = batch_char_lengths.max()
-    token_char_seq = batch_char_seq[:, :max_token_seq, :max_char_seq].contiguous()
-    token_char_lengths = batch_char_lengths[:, :max_token_seq].contiguous()
-
-    # gold token tag sequences
-    gold_token_tag_seq = batch_tag_seq[:, :max_token_seq].contiguous()
-
-    # token tag scores
-    token_input_seq = (token_seq, token_char_seq, token_char_lengths)
-    token_tag_scores = tagger(token_input_seq, batch_token_lengths)
-
-    # token tag losses
-    token_tag_losses = tagger.token_classifier.loss(token_tag_scores, gold_token_tag_seq, token_seq_mask)
-
-    # decoded token tag sequence
-    decoded_token_tag_seq = tagger.token_classifier.decode(token_tag_scores)
-
-    ## 2. Morph level tagging
-    # gold tag sequence
-    # reshape [bs, seq_len, 3] tensor (last dimension represents pref,host,suff) into [bs, 3*seq_len]
-    gold_tag_seq = gold_token_tag_seq.view(batch_size, -1)
-    # filter '_' tags and re-pad filtered tag sequence
-    gold_token_tag_seq_mask = gold_tag_seq != tag2id['_']
-    gold_tag_seq = [tags[mask] for tags, mask in zip(gold_tag_seq, gold_token_tag_seq_mask)]
-    gold_tag_seq = torch.nn.utils.rnn.pad_sequence(gold_tag_seq, batch_first=True)
-    # keep track of the filtered tags so that we can reconstruct token level tags
-    gold_tag_token_mask_idx = [mask.nonzero().squeeze(dim=1) for mask in gold_token_tag_seq_mask]
-    gold_tag_token_mask_idx = torch.nn.utils.rnn.pad_sequence(gold_tag_token_mask_idx, batch_first=True)
-    # set new pad mask
-    gold_tag_seq_mask = gold_tag_seq != 0
-
-    # decoded tag sequence scores
-    # stack pref, host, suff score tensors into [bs, seq_len, 3, tags] tensor
-    decoded_tag_scores = torch.stack(token_tag_scores, dim=2)
-    # reshape [bs, seq_len, 3, tags] into [bs, 3*seq_len, tags]
-    decoded_tag_scores = decoded_tag_scores.view(decoded_tag_scores.shape[0], -1, decoded_tag_scores.shape[-1])
-    # filter out all tags generated by padded tokens and re-pad
-    decoded_token_tag_seq = [seq[mask] for seq, mask in zip(decoded_token_tag_seq, token_seq_mask)]
-    decoded_token_tag_seq = torch.nn.utils.rnn.pad_sequence(decoded_token_tag_seq, batch_first=True)
-    # reshape [bs, seq_len, 3] into [bs, 3*seq_len]
-    decoded_tag_seq = decoded_token_tag_seq.view(batch_size, -1)
-    # filter out both '_' tags as well as '<PAD>' and re-pad both decoded tags and scores.
-    # Filtering out '<PAD>' is required later when we we generate the tag mask based on the filtered decoded tag seq
-    # (I think <PAD> filtering is required because the crf loss mask mustn't have a <PAD> in it's initial position:
-    # Traceback (most recent call last):
-    #   File "/Users/Amit/dev/aseker00/modi/morph_seq_pos_tagging.py", line 155, in run_epoch
-    #     decoded_tag_seq = tagger.decode_crf(decoded_tag_scores, decoded_tag_seq_mask)
-    #   File "/Users/Amit/dev/aseker00/modi/models.py", line 253, in decode_crf
-    #     decoded_classes = self.crf.decode(emissions=label_scores, mask=mask)
-    #   File "/Users/Amit/miniconda3/envs/modi-env/lib/python3.7/site-packages/torchcrf/__init__.py", line 131, in decode
-    #     self._validate(emissions, mask=mask)
-    #   File "/Users/Amit/miniconda3/envs/modi-env/lib/python3.7/site-packages/torchcrf/__init__.py", line 167, in _validate
-    #     raise ValueError('mask of the first timestep must all be on')
-    # ValueError: mask of the first timestep must all be on)
-    decoded_token_tag_seq_mask = (decoded_tag_seq != tag2id['_']) & (decoded_tag_seq != tag2id['<PAD>'])
-    # decoded_token_tag_seq_mask = decoded_tag_seq != tag2id['_']
-    decoded_tag_scores = [tags[mask] for tags, mask in zip(decoded_tag_scores, decoded_token_tag_seq_mask)]
-    decoded_tag_scores = torch.nn.utils.rnn.pad_sequence(decoded_tag_scores, batch_first=True)
-    decoded_tag_seq = [tags[mask] for tags, mask in zip(decoded_tag_seq, decoded_token_tag_seq_mask)]
-    decoded_tag_seq = torch.nn.utils.rnn.pad_sequence(decoded_tag_seq, batch_first=True)
-    # This is where we generate a 0 pad mask (this is why we filtered <PAD> predictions earlier
-    decoded_tag_seq_mask = decoded_tag_seq != 0
-
-    # keep track of the filtered tags so that we can reconstruct token level tags
-    decoded_tag_token_mask_idx = [mask.nonzero().squeeze(dim=1) for mask in decoded_token_tag_seq_mask]
-    decoded_tag_token_mask_idx = torch.nn.utils.rnn.pad_sequence(decoded_tag_token_mask_idx, batch_first=True)
-
-    # align decoded scores and gold tags/mask before computing loss
-    decoded_len = decoded_tag_scores.shape[1]
-    gold_len = gold_tag_seq.shape[1]
-    if decoded_len < gold_len:
-        fill_len = gold_len - decoded_len
-        decoded_tag_scores = F.pad(decoded_tag_scores, (0, 0, 0, fill_len))
-    elif gold_len < decoded_len:
-        fill_len = decoded_len - gold_len
-        gold_tag_seq = F.pad(gold_tag_seq, (0, fill_len))
-        gold_tag_seq_mask = F.pad(gold_tag_seq_mask, (0, fill_len))
-    # compute loss
-    tag_seq_loss = tagger.loss_crf(decoded_tag_scores, gold_tag_seq, gold_tag_seq_mask)
-    # reset original decoded scores or gold tags/mask dimensions
-    if decoded_len != decoded_tag_scores.shape[1]:
-        decoded_tag_scores = decoded_tag_scores[:, :decoded_len, :]
-    elif gold_len != gold_tag_seq.shape[1]:
-        gold_tag_seq = gold_tag_seq[:, :gold_len]
-        gold_tag_seq_mask = gold_tag_seq_mask[:, :gold_len]
-    # step
+    token_scores, gold_tags, tokens, token_losses = score_tokens(tokens, chars, char_lengths, token_lengths, tags, tagger)
+    tag_scores, tag_indices, tag_masks, gold_tags, gold_tag_indices, gold_masks, tag_loss = score_tags(token_scores, gold_tags, tagger)
     if optimizer:
-        pref_loss, host_loss, suff_loss = token_tag_losses
+        pref_loss, host_loss, suff_loss = token_losses
         pref_loss.backward(retain_graph=True)
         host_loss.backward(retain_graph=True)
         suff_loss.backward(retain_graph=True)
-        tag_seq_loss.backward()
+        tag_loss.backward()
         optimizer.step()
         optimizer.zero_grad()
-    decoded_tag_outputs = (decoded_tag_scores, decoded_tag_seq_mask, decoded_tag_token_mask_idx)
-    gold_tag_outputs = (gold_tag_seq, gold_tag_seq_mask, gold_tag_token_mask_idx)
-    token_outputs = (token_seq, batch_token_lengths)
-    return decoded_tag_outputs, gold_tag_outputs, tag_seq_loss, token_outputs
+    return tag_scores, tag_masks, tag_indices, tag_loss, gold_tags, gold_tag_indices, gold_masks, tokens, token_lengths
 
 
 def run_epoch(epoch, phase, print_every, data, tagger, optimizer=None, max_steps=None):
@@ -155,39 +115,34 @@ def run_epoch(epoch, phase, print_every, data, tagger, optimizer=None, max_steps
     print_samples, epoch_samples = [], []
     for i, batch in enumerate(data):
         step = i + 1
-        decoded_tag_outputs, gold_tag_outputs, decoded_tag_loss, token_outputs = run_batch(batch, tagger, optimizer)
-        (decoded_tag_scores, decoded_tag_mask, decoded_tag_idx) = decoded_tag_outputs
-        (gold_tags, gold_tag_mask, gold_tag_idx) = gold_tag_outputs
-        (token_seq, token_seq_lengths) = token_outputs
+        tag_scores, tag_masks, tag_indices, tag_loss, gold_tags, gold_indices, gold_masks, tokens, token_lengths = run_batch(batch, tagger, optimizer)
         with torch.no_grad():
-            decoded_tags = tagger.decode_crf(decoded_tag_scores, decoded_tag_mask)
-        gold_token_tags = align_token_tags(gold_tags, gold_tag_idx, gold_tag_mask, token_seq_lengths, 3, tag2id)
-        decoded_token_tags = align_token_tags(decoded_tags, decoded_tag_idx, decoded_tag_mask, token_seq_lengths, 3, tag2id)
-        decoded_token_tags = torch.nn.utils.rnn.pad_sequence(decoded_token_tags, batch_first=True)
-        gold_token_tags = torch.nn.utils.rnn.pad_sequence(gold_token_tags, batch_first=True)
+            decoded_tags = tagger.decode_crf(tag_scores, tag_masks)
+        gold_token_tags = batch_re_mask_select(gold_tags, gold_indices, gold_masks, tag2id['<PAD>'], tag2id['_'], 0)
+        decoded_token_tags = batch_re_mask_select(decoded_tags, tag_indices, tag_masks, tag2id['<PAD>'], tag2id['_'], 0)
         decoded_token_tags_mask = decoded_token_tags != 0
         gold_token_tags_mask = gold_token_tags != 0
-        samples = to_samples(decoded_token_tags, gold_token_tags, decoded_token_tags_mask, gold_token_tags_mask, token_seq, token_seq_lengths, token_vocab)
+        samples = to_samples(decoded_token_tags, gold_token_tags, decoded_token_tags_mask, gold_token_tags_mask, tokens, token_lengths, token_vocab)
         print_samples.append(samples)
         epoch_samples.append(samples)
-        print_loss += decoded_tag_loss
-        epoch_loss += decoded_tag_loss
+        print_loss += tag_loss
+        epoch_loss += tag_loss
         if step % print_every == 0:
             print(f'{phase} epoch {epoch} step {step} loss: {print_loss / print_every}')
-            print_sample(print_samples[-1][0][-1], print_samples[-1][1][-1])
+            print_sample(print_samples[-1][0][-1], print_samples[-1][1][-1], ['<PAD>', '_'])
             print_loss = 0
             print_samples = []
         if max_steps and step == max_steps:
             break
     print(f'{phase} epoch {epoch} total loss: {epoch_loss / len(data)}')
-    print_scores(epoch_samples, ['_', '<PAD>'])
+    print_scores(epoch_samples, ['<PAD>', '_'])
 
 
-for lr in [1e-2]:
+for lr in [1e-3]:
     adam = AdamW(model.parameters(), lr=lr)
     for epoch in range(15):
         model.train()
-        run_epoch(epoch, 'train', 1, train_dataloader, model, adam)
+        run_epoch(epoch, 'train', 32, train_dataloader, model, adam)
         with torch.no_grad():
             model.eval()
-            run_epoch(epoch, 'test', 1, test_dataloader, model)
+            run_epoch(epoch, 'test', 32, test_dataloader, model)

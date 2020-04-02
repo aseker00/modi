@@ -20,9 +20,9 @@ char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = ds.load_morpheme_ft_emb(r
 train_dataset = morpheme_dataset['train']
 dev_dataset = morpheme_dataset['dev']
 test_dataset = morpheme_dataset['test']
-train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-dev_dataloader = DataLoader(dev_dataset, batch_size=32)
-test_dataloader = DataLoader(test_dataset, batch_size=32)
+train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True)
+dev_dataloader = DataLoader(dev_dataset, batch_size=1)
+test_dataloader = DataLoader(test_dataset, batch_size=1)
 
 device = None
 num_tags = len(morpheme_vocab['tags'])
@@ -35,50 +35,56 @@ decoder_tag_rnn = nn.LSTM(tag_emb.embedding_dim, token_encoder.hidden_size, 1, d
 decoder_tag_token_rnn = nn.LSTM(tag_emb.embedding_dim + token_emb.embedding_dim, token_encoder.hidden_size, 1,
                                 dropout=0.0, batch_first=True)
 morph_decoder = MorphemeDecoder(decoder_tag_token_rnn, 0.0, num_tags, tag2id['<EOT>'])
-model = Seq2SeqClassifier(token_emb, 0.7, token_encoder, tag_emb, morph_decoder, device)
+model = Seq2SeqClassifier(token_emb, 0.0, token_encoder, tag_emb, morph_decoder, device)
 if device is not None:
     model.to(device)
 
 
-def score_tokens(token_seq, char_seq, char_lengths, token_lengths, gold_seq, num_token_tags, tagger, teacher_forcing):
-    # Mark lattice ET
-    gold_masks = gold_seq != 0
-    for tags, mask in zip(gold_seq, gold_masks.sum(dim=2)):
+def score_tokens(tokens, chars, char_lengths, token_lengths, morphemes, max_morph_per_token, tagger, use_teacher_forcing):
+    max_len = token_lengths.max()
+    tokens = tokens[:, :max_len].contiguous()
+    max_char_len = char_lengths.max()
+    chars = chars[:, :max_len, :max_char_len].contiguous()
+    char_lengths = char_lengths[:, :max_len].contiguous()
+    # append an extra zero pad to the tags so we can always append EOT (even if there are max_tags_per_token tags
+    tags = F.pad(morphemes[:, :max_len, (2 * max_morph_per_token):(3 * max_morph_per_token)].contiguous(), [0, 1])
+    tag_masks = tags != 0
+    for tags, mask in zip(tags, tag_masks.sum(dim=2)):
         for i in range(tags.shape[0]):
             tags[i][mask[i]] = tag2id['<EOT>']
-    gold_masks = gold_seq != 0
-    gold_seq = [tags[:num][mask[:num]] for tags, mask, num in zip(gold_seq, gold_masks, token_lengths)]
-    gold_seq = torch.nn.utils.rnn.pad_sequence(gold_seq, batch_first=True)
-    gold_masks = gold_seq != 0
-    if teacher_forcing:
-        scores = tagger(token_seq, char_seq, char_lengths, token_lengths, num_token_tags, gold_seq)
+    tag_masks = tags != 0
+    tags = [tags[:num][mask[:num]] for tags, mask, num in zip(tags, tag_masks, token_lengths)]
+    tags = torch.nn.utils.rnn.pad_sequence(tags, batch_first=True)
+    tag_masks = tags != 0
+    if use_teacher_forcing:
+        scores = tagger(tokens, chars, char_lengths, token_lengths, max_morph_per_token, tags)
     else:
-        scores = tagger(token_seq, char_seq, char_lengths, token_lengths, num_token_tags)
+        scores = tagger(tokens, chars, char_lengths, token_lengths, max_morph_per_token)
     # Align decoded scores and gold tags/mask before computing loss
-    tag_len = scores.shape[1]
-    gold_len = gold_seq.shape[1]
-    fill_len = gold_len - tag_len
+    scores_len = scores.shape[1]
+    tags_len = tags.shape[1]
+    fill_len = tags_len - scores_len
     if fill_len > 0:
         scores = F.pad(scores, [0, 0, 0, fill_len])
     elif fill_len < 0:
-        gold_seq = F.pad(gold_seq, [0, -fill_len])
-        gold_masks = F.pad(gold_masks, [0, -fill_len])
-    loss = tagger.loss(scores, gold_seq, gold_masks)
+        tags = F.pad(tags, [0, -fill_len])
+        tag_masks = F.pad(tag_masks, [0, -fill_len])
+    loss = tagger.decoder.loss(scores, tags, tag_masks)
     # if fill_len > 0:
     #     decoded_token_tag_scores = decoded_token_tag_scores[:, :decoded_token_tag_len, :]
     # elif fill_len < 0:
     #     gold_token_tag_seq = gold_token_tag_seq[:, :gold_token_tag_len]
     #     gold_token_tag_seq_mask = gold_token_tag_seq_mask[:, :gold_token_tag_len]
-    return scores, gold_seq, loss
+    return scores, tags, tokens, loss
 
 
 def score_tags(token_scores, gold_token_tags, token_lengths, tagger):
-    token_tags = tagger.decode(token_scores)
+    token_tags = tagger.decoder.decode(token_scores)
     token_tag_masks = mask_token_tags(token_tags, token_lengths)
 
     # Filter out <EOT> tags
     gold_et_masks = gold_token_tags != tag2id['<EOT>']
-    gold_tags, gold_tag_indices = batch_mask_select(gold_token_tags, gold_et_masks)
+    gold_tags, gold_indices = batch_mask_select(gold_token_tags, gold_et_masks)
     token_et_masks = token_tags != tag2id['<EOT>']
     # ValueError: mask of the first timestep must all be on
     token_et_masks[:, 0] = True
@@ -97,9 +103,9 @@ def score_tags(token_scores, gold_token_tags, token_lengths, tagger):
     elif fill_len < 0:
         gold_tags = F.pad(gold_tags, [0, -fill_len])
         gold_masks = F.pad(gold_masks, [0, -fill_len])
-        gold_tag_indices = F.pad(gold_tag_indices, [0, -fill_len])
+        gold_indices = F.pad(gold_indices, [0, -fill_len])
     loss = tagger.loss_crf(tag_scores, gold_tags, gold_masks)
-    return tag_scores, tag_indices, tag_masks, gold_tags, gold_tag_indices, gold_masks, loss
+    return tag_scores, tag_indices, tag_masks, gold_tags, gold_indices, gold_masks, loss
 
 
 def mask_token_tags(tags, token_lengths):
@@ -118,44 +124,29 @@ def mask_token_tags(tags, token_lengths):
 
 def run_batch(batch, tagger, optimizer, teacher_forcing):
     batch = tuple(t.to(device) for t in batch)
-    batch_token_seq = batch[0]
-    batch_token_lengths = batch[1]
-    batch_char_seq = batch[2]
-    batch_char_lengths = batch[3]
-    batch_morph_seq = batch[4]
-
-    # tokens
-    max_token_seq = batch_token_lengths.max()
-    token_seq = batch_token_seq[:, :max_token_seq].contiguous()
-
-    # chars
-    max_char_seq = batch_char_lengths.max()
-    token_char_seq = batch_char_seq[:, :max_token_seq, :max_char_seq].contiguous()
-    token_char_lengths = batch_char_lengths[:, :max_token_seq].contiguous()
-
-    # token tags
-    num_token_tags = batch_morph_seq.shape[2] // 4
-    # append an extra zero pad to the tags - so even if there are 5 morphemes (5 tags) we can still append EOT
-    gold_seq = F.pad(batch_morph_seq[:, :max_token_seq, (2 * num_token_tags):(3 * num_token_tags)].contiguous(), [0, 1])
+    tokens = batch[0]
+    token_lengths = batch[1]
+    chars = batch[2]
+    char_lengths = batch[3]
+    morphemes = batch[4]
+    max_morph_per_token = morphemes.shape[2] // 4
     use_teacher_forcing = False
     if optimizer:
         if teacher_forcing is not None and random.uniform(0, 1) < teacher_forcing:
             use_teacher_forcing = True
-    token_tag_scores, gold_token_tags, token_loss = score_tokens(token_seq, token_char_seq, token_char_lengths,
-                                                                 batch_token_lengths, gold_seq,  num_token_tags,
-                                                                 tagger, use_teacher_forcing)
+    token_tag_scores, gold_token_tags, tokens, token_loss = score_tokens(tokens, chars, char_lengths, token_lengths,
+                                                                         morphemes, max_morph_per_token, tagger,
+                                                                         use_teacher_forcing)
     tag_scores, tag_indices, tag_masks, gold_tags, gold_indices, gold_masks, tag_loss = score_tags(token_tag_scores,
                                                                                                    gold_token_tags,
-                                                                                                   batch_token_lengths,
+                                                                                                   token_lengths,
                                                                                                    tagger)
     if optimizer:
         token_loss.backward(retain_graph=True)
         tag_loss.backward()
         optimizer.step()
         optimizer.zero_grad()
-    return (token_seq, batch_token_lengths, num_token_tags,
-            tag_scores, tag_indices, tag_masks, tag_loss,
-            gold_tags, gold_indices, gold_masks)
+    return tokens, token_lengths, max_morph_per_token, tag_scores, tag_indices, tag_masks, tag_loss, gold_tags, gold_indices, gold_masks
 
 
 def run_epoch(epoch, phase, print_every, data, tagger, optimizer=None, teacher_forcing=None, max_num_batches=None):
@@ -163,7 +154,7 @@ def run_epoch(epoch, phase, print_every, data, tagger, optimizer=None, teacher_f
     print_samples, epoch_samples = [], []
     for i, batch in enumerate(data):
         step = i + 1
-        (token_seq, batch_token_lengths, num_token_tags,
+        (tokens, token_lengths, max_tags_pre_token,
          tag_scores, tag_indices, tag_masks, tag_loss,
          gold_tags, gold_indices, gold_masks) = run_batch(batch, tagger, optimizer, teacher_forcing)
 
@@ -172,16 +163,15 @@ def run_epoch(epoch, phase, print_every, data, tagger, optimizer=None, teacher_f
         with torch.no_grad():
             decoded_tags = tagger.decode_crf(tag_scores, tag_masks)
         # Reconstruct token level tags
-        gold_token_tags = batch_re_mask_select(gold_tags, gold_indices, gold_masks, tag2id['<PAD>'], tag2id['<EOT>'])
-        decoded_token_tags = batch_re_mask_select(decoded_tags, tag_indices, tag_masks, tag2id['<PAD>'], tag2id['<EOT>'])
+        gold_token_tags = batch_re_mask_select(gold_tags, gold_indices, gold_masks, tag2id['<PAD>'], tag2id['<EOT>'], 1)
+        decoded_token_tags = batch_re_mask_select(decoded_tags, tag_indices, tag_masks, tag2id['<PAD>'], tag2id['<EOT>'], 1)
 
         # Align tag sequence to token sequence - 6 tags per token (5 tags + et)
-        gold_token_tags = batch_expand_tokens(gold_token_tags, num_token_tags + 1, tag2id['<EOT>'], tag2id['_'])
-        decoded_token_tags = batch_expand_tokens(decoded_token_tags, num_token_tags + 1, tag2id['<EOT>'], tag2id['_'])
+        gold_token_tags = batch_expand_tokens(gold_token_tags, max_tags_pre_token + 1, tag2id['<EOT>'], tag2id['_'])
+        decoded_token_tags = batch_expand_tokens(decoded_token_tags, max_tags_pre_token + 1, tag2id['<EOT>'], tag2id['_'])
         decoded_token_tag_masks = decoded_token_tags != 0
         gold_token_tag_masks = gold_token_tags != 0
-        samples = to_samples(decoded_token_tags, gold_token_tags, decoded_token_tag_masks, gold_token_tag_masks,
-                             token_seq, batch_token_lengths, morpheme_vocab)
+        samples = to_samples(decoded_token_tags, gold_token_tags, decoded_token_tag_masks, gold_token_tag_masks, tokens, token_lengths, morpheme_vocab)
 
         print_samples.append(samples)
         epoch_samples.append(samples)
@@ -198,11 +188,11 @@ def run_epoch(epoch, phase, print_every, data, tagger, optimizer=None, teacher_f
     print_scores(epoch_samples, ['<PAD>', '<EOT>', '_'])
 
 
-for lr in [1e-2]:
+for lr in [1e-3]:
     adam = AdamW(model.parameters(), lr=lr)
     for epoch in range(15):
         model.train()
-        run_epoch(epoch, 'train', 1, train_dataloader, model, adam, 1.0)
+        run_epoch(epoch, 'train', 32, train_dataloader, model, adam, 1.0)
         with torch.no_grad():
             model.eval()
-            run_epoch(epoch, 'test', 1, test_dataloader, model)
+            run_epoch(epoch, 'test', 32, test_dataloader, model)

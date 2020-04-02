@@ -121,7 +121,7 @@ def _process_treebank(tb_root_dir_path, tb_type):
     token_file_path = tb_root_dir_path / f'{tb_type}_hebtb.tokens'
     gold_lattices_file_path = tb_root_dir_path / f'{tb_type}_hebtb-gold.lattices'
     tokens = _split_sentences(token_file_path)
-    gold_lattices, removed_idx = _parse_lattices(gold_lattices_file_path, tb_type=='train')
+    gold_lattices, removed_idx = _parse_lattices(gold_lattices_file_path, tb_type == 'train')
     if removed_idx:
         tokens = [t for i, t in enumerate(tokens) if i not in removed_idx]
     gold_df = _transform_lattices_to_dataframe(gold_lattices, tokens)
