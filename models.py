@@ -236,8 +236,9 @@ class Seq2SeqClassifier(nn.Module):
         token_indices = torch.arange(embed_tokens.shape[1], device=self.device).repeat(batch_size).view(batch_size, -1)
         for i in range(max_tag_seq_len):
             token_masks = token_indices == cur_token_idx.unsqueeze(1)
-            embed_token = [t[idx] if idx < t.shape[0] else t[-1] for t, idx in zip(embed_tokens, cur_token_idx)]
-            embed_token = torch.stack(embed_token, dim=0).unsqueeze(dim=1)
+            embed_token = embed_tokens[token_masks].unsqueeze(dim=1)
+            # embed_token = [t[idx] if idx < t.shape[0] else t[-1] for t, idx in zip(embed_tokens, cur_token_idx)]
+            # embed_token = torch.stack(embed_token, dim=0).unsqueeze(dim=1)
             embed_input = torch.cat([embed_token, embed_tag], dim=2)
             dec_tag_scores, dec_hidden_state = self.decoder(embed_input, dec_hidden_state)
             tag_scores.append(dec_tag_scores.squeeze(dim=1))

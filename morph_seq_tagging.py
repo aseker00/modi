@@ -41,41 +41,41 @@ if device is not None:
 
 
 def score_tokens(tokens, chars, char_lengths, token_lengths, morphemes, max_morph_per_token, tagger, use_teacher_forcing):
-    max_len = token_lengths.max()
+    max_len = token_lengths.max().item()
     tokens = tokens[:, :max_len].contiguous()
-    max_char_len = char_lengths.max()
+    max_char_len = char_lengths.max().item()
     chars = chars[:, :max_len, :max_char_len].contiguous()
     char_lengths = char_lengths[:, :max_len].contiguous()
     # append an extra zero pad to the tags so we can always append EOT (even if there are max_tags_per_token tags
-    tags = F.pad(morphemes[:, :max_len, (2 * max_morph_per_token):(3 * max_morph_per_token)].contiguous(), [0, 1])
-    tag_masks = tags != 0
-    for tags, mask in zip(tags, tag_masks.sum(dim=2)):
+    token_tags = F.pad(morphemes[:, :max_len, (2 * max_morph_per_token):(3 * max_morph_per_token)].contiguous(), [0, 1])
+    token_tag_masks = token_tags != 0
+    for tags, mask in zip(token_tags, token_tag_masks.sum(dim=2)):
         for i in range(tags.shape[0]):
             tags[i][mask[i]] = tag2id['<EOT>']
-    tag_masks = tags != 0
-    tags = [tags[:num][mask[:num]] for tags, mask, num in zip(tags, tag_masks, token_lengths)]
-    tags = torch.nn.utils.rnn.pad_sequence(tags, batch_first=True)
-    tag_masks = tags != 0
+    token_tag_masks = token_tags != 0
+    token_tags = [tags[:num][mask[:num]] for tags, mask, num in zip(token_tags, token_tag_masks, token_lengths)]
+    token_tags = torch.nn.utils.rnn.pad_sequence(token_tags, batch_first=True)
+    token_tag_masks = token_tags != 0
     if use_teacher_forcing:
-        scores = tagger(tokens, chars, char_lengths, token_lengths, max_morph_per_token, tags)
+        scores = tagger(tokens, chars, char_lengths, token_lengths, max_morph_per_token, token_tags)
     else:
         scores = tagger(tokens, chars, char_lengths, token_lengths, max_morph_per_token)
     # Align decoded scores and gold tags/mask before computing loss
     scores_len = scores.shape[1]
-    tags_len = tags.shape[1]
+    tags_len = token_tags.shape[1]
     fill_len = tags_len - scores_len
     if fill_len > 0:
         scores = F.pad(scores, [0, 0, 0, fill_len])
     elif fill_len < 0:
-        tags = F.pad(tags, [0, -fill_len])
-        tag_masks = F.pad(tag_masks, [0, -fill_len])
-    loss = tagger.decoder.loss(scores, tags, tag_masks)
+        token_tags = F.pad(token_tags, [0, -fill_len])
+        token_tag_masks = F.pad(token_tag_masks, [0, -fill_len])
+    loss = tagger.decoder.loss(scores, token_tags, token_tag_masks)
     # if fill_len > 0:
     #     decoded_token_tag_scores = decoded_token_tag_scores[:, :decoded_token_tag_len, :]
     # elif fill_len < 0:
     #     gold_token_tag_seq = gold_token_tag_seq[:, :gold_token_tag_len]
     #     gold_token_tag_seq_mask = gold_token_tag_seq_mask[:, :gold_token_tag_len]
-    return scores, tags, tokens, loss
+    return scores, token_tags, tokens, loss
 
 
 def score_tags(token_scores, gold_token_tags, token_lengths, tagger):
