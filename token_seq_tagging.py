@@ -26,7 +26,7 @@ test_dataloader = DataLoader(test_dataset, batch_size=1)
 device = None
 num_tags = len(token_vocab['tags'])
 tag2id = {v: i for i, v in enumerate(token_vocab['tags'])}
-token_char_emb = TokenCharRNNEmbedding(char_ft_emb, 300, 32, 0.0)
+token_char_emb = TokenCharRNNEmbedding(char_ft_emb, 300, 1, 0.0)
 token_emb = TokenEmbedding(token_ft_emb, token_char_emb, 0.7)
 token_encoder = TokenRNN(token_emb.embedding_dim, 300, 1, 0.0)
 token_classifier = TokenClassifier(token_emb, token_encoder, 0.0, num_tags)
@@ -35,7 +35,7 @@ if device is not None:
     model.to(device)
 
 
-def score_tokens(tokens, chars, char_lengths, token_lengths, tags, tagger):
+def score_tokens(tokens, chars, char_lengths, token_lengths, morphemes, tagger):
     batch_size = tokens.shape[0]
     max_len = token_lengths.max()
     tokens = tokens[:, :max_len].contiguous()
@@ -44,6 +44,7 @@ def score_tokens(tokens, chars, char_lengths, token_lengths, tags, tagger):
     max_char_len = char_lengths.max()
     chars = chars[:, :max_len, :max_char_len].contiguous()
     char_lengths = char_lengths[:, :max_len].contiguous()
+    tags = morphemes[:, :, 6:9]
     tags = tags[:, :max_len].contiguous()
     inputs = (tokens, chars, char_lengths)
     scores = tagger(inputs, token_lengths)
@@ -95,9 +96,10 @@ def run_batch(batch, tagger, optimizer):
     token_lengths = batch[1]
     chars = batch[2]
     char_lengths = batch[3]
-    tags = batch[4][:, :, 6:9]
+    morphemes = batch[4]
+    # tags = batch[4][:, :, 6:9]
 
-    token_scores, gold_tags, tokens, token_losses = score_tokens(tokens, chars, char_lengths, token_lengths, tags, tagger)
+    token_scores, gold_tags, tokens, token_losses = score_tokens(tokens, chars, char_lengths, token_lengths, morphemes, tagger)
     tag_scores, tag_indices, tag_masks, gold_tags, gold_tag_indices, gold_masks, tag_loss = score_tags(token_scores, gold_tags, tagger)
     if optimizer:
         pref_loss, host_loss, suff_loss = token_losses

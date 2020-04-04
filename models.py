@@ -89,8 +89,8 @@ class TokenClassifier(nn.Module):
         embed_input_seq = self.token_emb(*input_seq)
         outputs, _ = self.token_rnn(embed_input_seq, input_lengths)
         outputs = self.dropout(outputs)
-        # outputs = torch.tanh(outputs)
-        outputs = torch.relu(outputs)
+        outputs = torch.tanh(outputs)
+        # outputs = torch.relu(outputs)
         pref_scores = self.pref_output(outputs)
         host_scores = self.host_output(outputs)
         suff_scores = self.suff_output(outputs)
@@ -236,6 +236,8 @@ class Seq2SeqClassifier(nn.Module):
         token_indices = torch.arange(embed_tokens.shape[1], device=self.device).repeat(batch_size).view(batch_size, -1)
         for i in range(max_tag_seq_len):
             token_masks = token_indices == cur_token_idx.unsqueeze(1)
+            for missing_mask_id in (~torch.any(token_masks, dim=1)).nonzero().squeeze(dim=1):
+                token_masks[missing_mask_id][cur_token_idx[missing_mask_id] - 1] = True
             embed_token = embed_tokens[token_masks].unsqueeze(dim=1)
             # embed_token = [t[idx] if idx < t.shape[0] else t[-1] for t, idx in zip(embed_tokens, cur_token_idx)]
             # embed_token = torch.stack(embed_token, dim=0).unsqueeze(dim=1)
