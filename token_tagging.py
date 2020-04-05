@@ -24,7 +24,7 @@ test_dataloader = DataLoader(test_dataset, batch_size=32)
 num_tags = len(token_vocab['tags'])
 token_char_emb = TokenCharRNNEmbedding(char_ft_emb, 60, 1, 0.0)
 token_emb = TokenEmbedding(token_ft_emb, token_char_emb, 0.1)
-token_encoder = TokenRNN(token_emb.embedding_dim, 100, 2, 0.1)
+token_encoder = BatchTokenRNN(token_emb.embedding_dim, 200, 2, 0.1)
 model = TokenClassifier(token_emb, token_encoder, 0.1, num_tags)
 device = None
 

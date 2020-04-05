@@ -30,11 +30,11 @@ tag2id = {v: i for i, v in enumerate(morpheme_vocab['tags'])}
 token_char_emb = TokenCharRNNEmbedding(char_ft_emb, 300, 1, 0.0)
 token_emb = TokenEmbedding(token_ft_emb, token_char_emb, 0.0)
 # token_encoder = TokenRNN(token_emb.embedding_dim, 300, 1, 0.0)
-token_encoder = nn.LSTM(input_size=token_emb.embedding_dim, hidden_size=(300 // 2), num_layers=1, batch_first=True, bidirectional=True, dropout=0.0)
+token_encoder = nn.LSTM(input_size=token_emb.embedding_dim, hidden_size=300, num_layers=1, batch_first=True, bidirectional=True, dropout=0.0)
 # token_encoder = nn.LSTM(input_size=token_emb.embedding_dim, hidden_size=300, num_layers=1, dropout=0.0, bidirectional=True, batch_first=True)
 tag_emb = nn.Embedding(num_embeddings=num_tags, embedding_dim=100, padding_idx=0)
 decoder_tag_rnn = nn.LSTM(tag_emb.embedding_dim, token_encoder.hidden_size, 1, dropout=0.0, batch_first=True)
-decoder_tag_token_rnn = nn.LSTM(tag_emb.embedding_dim + token_emb.embedding_dim, token_encoder.hidden_size, 1,
+decoder_tag_token_rnn = nn.LSTM(tag_emb.embedding_dim + token_emb.embedding_dim, token_encoder.hidden_size * 2, 1,
                                 dropout=0.0, batch_first=True)
 morph_decoder = MorphemeDecoder(decoder_tag_token_rnn, 0.0, num_tags, tag2id['<EOT>'])
 model = Seq2SeqClassifier(token_emb, 0.0, token_encoder, tag_emb, morph_decoder, device)
@@ -47,9 +47,9 @@ def score_tokens(tokens, chars, char_lengths, token_lengths, morphemes, max_morp
     gold_tags = F.pad(morphemes[:, :, (2 * max_morph_per_token):(3 * max_morph_per_token)], [0, 1])
     tokens, chars, char_lengths, token_lengths, gold_tags = batch_narrow(tokens, chars, char_lengths, token_lengths,
                                                                          gold_tags)
-    tokens = F.pad(tokens, [0, 1])
-    chars = F.pad(chars, [0, 0, 0, 1])
-    char_lengths = F.pad(char_lengths, [0, 1])
+    # tokens = F.pad(tokens, [0, 1])
+    # chars = F.pad(chars, [0, 0, 0, 1])
+    # char_lengths = F.pad(char_lengths, [0, 1])
 
     # Append <EOT> labels
     gold_tags_mask = gold_tags != tag2id['<PAD>']

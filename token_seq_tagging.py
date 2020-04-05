@@ -28,7 +28,7 @@ num_tags = len(token_vocab['tags'])
 tag2id = {v: i for i, v in enumerate(token_vocab['tags'])}
 token_char_emb = TokenCharRNNEmbedding(char_ft_emb, 300, 1, 0.0)
 token_emb = TokenEmbedding(token_ft_emb, token_char_emb, 0.7)
-token_encoder = TokenRNN(token_emb.embedding_dim, 300, 1, 0.0)
+token_encoder = BatchTokenRNN(token_emb.embedding_dim, 300, 1, 0.0)
 token_classifier = TokenClassifier(token_emb, token_encoder, 0.0, num_tags)
 model = TokenMorphSeqClassifier(token_classifier)
 if device is not None:

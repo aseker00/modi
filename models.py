@@ -47,10 +47,10 @@ class TokenEmbedding(nn.Module):
         return self.token_emb.embedding_dim + self.token_char_emb.embedding_dim
 
 
-class TokenRNN(nn.Module):
+class BatchTokenRNN(nn.Module):
 
     def __init__(self, input_size, hidden_dim, num_layers, dropout):
-        super(TokenRNN, self).__init__()
+        super(BatchTokenRNN, self).__init__()
         self.rnn = nn.LSTM(input_size=input_size, hidden_size=hidden_dim // 2, num_layers=num_layers, batch_first=True,
                            bidirectional=True, dropout=(dropout if num_layers > 1 else 0))
 
@@ -58,12 +58,15 @@ class TokenRNN(nn.Module):
         # https: // gist.github.com / HarshTrivedi / f4e7293e941b17d19058f6fb90ab0fec
         sorted_lengths, sorted_perm_idx = token_lengths.sort(0, descending=True)
         packed_seq = pack_padded_sequence(embed_token_seq[sorted_perm_idx], sorted_lengths, batch_first=True)
-        packed_outputs, packed_hidden_state = self.rnn(packed_seq)
+        # packed_outputs, packed_hidden_state = self.rnn(packed_seq)
+        packed_outputs, _ = self.rnn(packed_seq)
         padded_output, seq_lengths = pad_packed_sequence(packed_outputs, batch_first=True, total_length=embed_token_seq.shape[1])
         _, reflect_sorted_perm_idx = sorted_perm_idx.sort()
         token_output = padded_output[reflect_sorted_perm_idx]
-        hidden_state = tuple(torch.stack([layer[reflect_sorted_perm_idx] for layer in hs], dim=0) for hs in packed_hidden_state)
-        return token_output, hidden_state
+        # hidden_state = tuple(torch.stack([layer[reflect_sorted_perm_idx] for layer in hs], dim=0) for hs in packed_hidden_state)
+        # return token_output, hidden_state
+        # return padded_output, packed_hidden_state
+        return token_output
 
     @property
     def hidden_size(self):
@@ -94,16 +97,6 @@ class TokenClassifier(nn.Module):
         pref_scores = self.pref_output(outputs)
         host_scores = self.host_output(outputs)
         suff_scores = self.suff_output(outputs)
-        # tag_scores = torch.stack((pref_tag_scores, host_tag_scores, suff_tag_scores), dim=1)
-        # tag_scores = (tag_scores.view(tag_scores.shape[0], tag_scores.shape[1] * tag_scores.shape[2], -1)
-        #               .transpose(dim0=1, dim1=2).contiguous()
-        #               .view(tag_scores.shape[0], tag_scores.shape[1] * tag_scores.shape[2], -1))
-        # pref_scores = torch.tanh(pref_scores)
-        # host_scores = torch.tanh(host_scores)
-        # suff_scores = torch.tanh(suff_scores)
-        # pref_scores = torch.relu(pref_scores)
-        # host_scores = torch.relu(host_scores)
-        # suff_scores = torch.relu(suff_scores)
         return pref_scores, host_scores, suff_scores
 
     def loss(self, label_scores, gold_labels, mask):
@@ -161,8 +154,6 @@ class MorphemeDecoder(nn.Module):
         outputs = torch.tanh(outputs)
         # outputs = torch.relu(outputs)
         scores = self.output(outputs)
-        # scores = torch.tanh(scores)
-        # scores = torch.relu(scores)
         return scores, hidden_state
 
     def loss(self, label_scores, gold_labels, mask):
@@ -177,6 +168,10 @@ class MorphemeDecoder(nn.Module):
     @property
     def num_tags(self):
         return self.output.out_features
+
+    @property
+    def num_layers(self):
+        return self.rnn.num_layers
 
 
 class Seq2SeqClassifier(nn.Module):
@@ -194,12 +189,13 @@ class Seq2SeqClassifier(nn.Module):
     def forward(self, token_seq, token_char_seq, token_char_lengths, token_lengths, max_token_tags_num, gold_tag_seq=None):
         embed_tokens = self.enc_emb(token_seq, token_char_seq, token_char_lengths)
         embed_tokens = self.enc_emb_dropout(embed_tokens)
-        _, enc_hidden_state = self.encoder(embed_tokens, token_lengths)
+        # enc_outputs, enc_hidden_state = self.encoder(embed_tokens, token_lengths)
+        enc_outputs, enc_hidden_state = self.encoder(embed_tokens)
         batch_size = embed_tokens.shape[0]
-        enc_h = enc_hidden_state[0].view(self.encoder.rnn.num_layers, 2, batch_size, self.encoder.rnn.hidden_size)
-        enc_c = enc_hidden_state[1].view(self.encoder.rnn.num_layers, 2, batch_size, self.encoder.rnn.hidden_size)
-        dec_h = enc_h[-self.decoder.rnn.num_layers:].transpose(dim0=2, dim1=3).reshape(self.decoder.rnn.num_layers, -1, batch_size).transpose(dim0=1, dim1=2).contiguous()
-        dec_c = enc_c[-self.decoder.rnn.num_layers:].transpose(dim0=2, dim1=3).reshape(self.decoder.rnn.num_layers, -1, batch_size).transpose(dim0=1, dim1=2).contiguous()
+        enc_h = enc_hidden_state[0].view(self.encoder.num_layers, 2, batch_size, self.encoder.hidden_size)
+        enc_c = enc_hidden_state[1].view(self.encoder.num_layers, 2, batch_size, self.encoder.hidden_size)
+        dec_h = enc_h[-self.decoder.num_layers:].transpose(dim0=2, dim1=3).reshape(self.decoder.num_layers, -1, batch_size).transpose(dim0=1, dim1=2).contiguous()
+        dec_c = enc_c[-self.decoder.num_layers:].transpose(dim0=2, dim1=3).reshape(self.decoder.num_layers, -1, batch_size).transpose(dim0=1, dim1=2).contiguous()
         dec_hidden_state = (dec_h, dec_c)
         if self.decoder.rnn.input_size == self.dec_emb.embedding_dim:
             tag_scores = self._forward_tag_decoding(dec_hidden_state, token_lengths, max_token_tags_num * token_seq.shape[1], gold_tag_seq)
@@ -236,11 +232,7 @@ class Seq2SeqClassifier(nn.Module):
         token_indices = torch.arange(embed_tokens.shape[1], device=self.device).repeat(batch_size).view(batch_size, -1)
         for i in range(max_tag_seq_len):
             token_masks = token_indices == cur_token_idx.unsqueeze(1)
-            for missing_mask_id in (~torch.any(token_masks, dim=1)).nonzero().squeeze(dim=1):
-                token_masks[missing_mask_id][cur_token_idx[missing_mask_id] - 1] = True
             embed_token = embed_tokens[token_masks].unsqueeze(dim=1)
-            # embed_token = [t[idx] if idx < t.shape[0] else t[-1] for t, idx in zip(embed_tokens, cur_token_idx)]
-            # embed_token = torch.stack(embed_token, dim=0).unsqueeze(dim=1)
             embed_input = torch.cat([embed_token, embed_tag], dim=2)
             dec_tag_scores, dec_hidden_state = self.decoder(embed_input, dec_hidden_state)
             tag_scores.append(dec_tag_scores.squeeze(dim=1))
