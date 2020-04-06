@@ -1,6 +1,6 @@
 from models import *
-import dataset as ds
-import treebank as tb
+import heb_sprml_treebank_dataset as ds
+import heb_spmrl_treebank as tb
 from pos_tagging_utils import *
 from torch.optim.adamw import AdamW
 from torch.utils.data.dataloader import DataLoader
@@ -12,12 +12,12 @@ ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
 # sys.path.insert(0, str(root_dir_path))
 
 partition = tb.load_lattices(root_dir_path, ['dev', 'test', 'train'])
-token_vocab, token_dataset = ds.load_token_dataset(root_dir_path, partition)
+token_vocab, _, gold_dataset = ds.load_token_dataset(root_dir_path, partition)
 char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = ds.load_token_ft_emb(root_dir_path, ft_root_dir_path, token_vocab)
 
-train_dataset = token_dataset['train']
-dev_dataset = token_dataset['dev']
-test_dataset = token_dataset['test']
+train_dataset = gold_dataset['train']
+dev_dataset = gold_dataset['dev']
+test_dataset = gold_dataset['test']
 train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True)
 dev_dataloader = DataLoader(dev_dataset, batch_size=1)
 test_dataloader = DataLoader(test_dataset, batch_size=1)
@@ -120,8 +120,8 @@ def run_epoch(epoch, phase, print_every, data, tagger, optimizer=None, max_steps
         tag_scores, tag_masks, tag_indices, tag_loss, gold_tags, gold_indices, gold_masks, tokens, token_lengths = run_batch(batch, tagger, optimizer)
         with torch.no_grad():
             decoded_tags = tagger.decode_crf(tag_scores, tag_masks)
-        gold_token_tags = batch_re_mask_select(gold_tags, gold_indices, gold_masks, tag2id['<PAD>'], tag2id['_'], 0)
-        decoded_token_tags = batch_re_mask_select(decoded_tags, tag_indices, tag_masks, tag2id['<PAD>'], tag2id['_'], 0)
+        gold_token_tags = batch_mask_select_reconstruct(gold_tags, gold_indices, gold_masks, tag2id['_'])
+        decoded_token_tags = batch_mask_select_reconstruct(decoded_tags, tag_indices, tag_masks, tag2id['_'])
         decoded_token_tags_mask = decoded_token_tags != 0
         gold_token_tags_mask = gold_token_tags != 0
         samples = to_samples(decoded_token_tags, gold_token_tags, decoded_token_tags_mask, gold_token_tags_mask, tokens, token_lengths, token_vocab)

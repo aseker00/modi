@@ -4,6 +4,31 @@ from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence, pad_se
 from torchcrf import CRF
 
 
+class MorphEmbedding(nn.Module):
+
+    def __init__(self, form_emb, lemma_emb, tag_emb, feats_emb):
+        super(MorphEmbedding, self).__init__()
+        self.form_emb = form_emb
+        self.lemma_emb = lemma_emb
+        self.tag_emb = tag_emb
+        self.feats_emb = feats_emb
+        self.embedding_dim = (form_emb.embedding_dim + lemma_emb.embedding_dim + tag_emb.embedding_dim + feats_emb.embedding_dim)
+
+    def forward(self, lattice):
+        forms = lattice[:, :, 0]
+        lemmas = lattice[:, :, 1]
+        tags = lattice[:, :, 2]
+        feats = lattice[:, :, 3:9].contiguous().view(lattice.size(0), -1)
+        embedded_forms = self.form_emb(forms)
+        embedded_lemmas = self.lemma_emb(lemmas)
+        embedded_tags = self.tag_emb(tags)
+        embedded_feats = self.feats_emb(feats)
+        embedded_feats = embedded_feats.view(lattice.shape[0], lattice.shape[1], -1, embedded_feats.shape[2])
+        embedded_feats = embedded_feats.mean(2)
+        embedded_lattice = torch.cat([embedded_forms, embedded_lemmas, embedded_tags, embedded_feats], dim=2)
+        return embedded_lattice
+
+
 class TokenCharRNNEmbedding(nn.Module):
 
     def __init__(self, char_emb, hidden_dim, num_layers, dropout):
@@ -90,7 +115,7 @@ class TokenClassifier(nn.Module):
 
     def forward(self, input_seq, input_lengths):
         embed_input_seq = self.token_emb(*input_seq)
-        outputs, _ = self.token_rnn(embed_input_seq, input_lengths)
+        outputs = self.token_rnn(embed_input_seq, input_lengths)
         outputs = self.dropout(outputs)
         outputs = torch.tanh(outputs)
         # outputs = torch.relu(outputs)

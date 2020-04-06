@@ -2,8 +2,8 @@ import random
 from torch.optim.adamw import AdamW
 from torch.utils.data.dataloader import DataLoader
 from models import *
-import dataset as ds
-import treebank as tb
+import heb_sprml_treebank_dataset as ds
+import heb_spmrl_treebank as tb
 from pos_tagging_utils import *
 from pathlib import Path
 # import sys
@@ -13,13 +13,12 @@ ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
 # sys.path.insert(0, str(root_dir_path))
 
 partition = tb.load_lattices(root_dir_path, ['dev', 'test', 'train'])
-morpheme_vocab, morpheme_dataset = ds.load_morpheme_dataset(root_dir_path, partition)
-char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = ds.load_morpheme_ft_emb(root_dir_path, ft_root_dir_path,
-                                                                               morpheme_vocab)
+morpheme_vocab, _, gold_dataset = ds.load_morpheme_dataset(root_dir_path, partition)
+char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = ds.load_morpheme_ft_emb(root_dir_path, ft_root_dir_path, morpheme_vocab)
 
-train_dataset = morpheme_dataset['train']
-dev_dataset = morpheme_dataset['dev']
-test_dataset = morpheme_dataset['test']
+train_dataset = gold_dataset['train']
+dev_dataset = gold_dataset['dev']
+test_dataset = gold_dataset['test']
 train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True)
 dev_dataloader = DataLoader(dev_dataset, batch_size=1)
 test_dataloader = DataLoader(test_dataset, batch_size=1)
@@ -34,8 +33,7 @@ token_encoder = nn.LSTM(input_size=token_emb.embedding_dim, hidden_size=300, num
 # token_encoder = nn.LSTM(input_size=token_emb.embedding_dim, hidden_size=300, num_layers=1, dropout=0.0, bidirectional=True, batch_first=True)
 tag_emb = nn.Embedding(num_embeddings=num_tags, embedding_dim=100, padding_idx=0)
 decoder_tag_rnn = nn.LSTM(tag_emb.embedding_dim, token_encoder.hidden_size, 1, dropout=0.0, batch_first=True)
-decoder_tag_token_rnn = nn.LSTM(tag_emb.embedding_dim + token_emb.embedding_dim, token_encoder.hidden_size * 2, 1,
-                                dropout=0.0, batch_first=True)
+decoder_tag_token_rnn = nn.LSTM(tag_emb.embedding_dim + token_emb.embedding_dim, token_encoder.hidden_size * 2, 1, dropout=0.0, batch_first=True)
 morph_decoder = MorphemeDecoder(decoder_tag_token_rnn, 0.0, num_tags, tag2id['<EOT>'])
 model = Seq2SeqClassifier(token_emb, 0.0, token_encoder, tag_emb, morph_decoder, device)
 if device is not None:

@@ -2,8 +2,8 @@ from torch.optim.adamw import AdamW
 from torch.utils.data.dataloader import DataLoader
 
 from models import *
-import dataset as ds
-import treebank as tb
+import heb_sprml_treebank_dataset as ds
+import heb_spmrl_treebank as tb
 from pos_tagging_utils import *
 
 
