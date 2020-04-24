@@ -10,7 +10,7 @@ import numpy as np
 
 root_path = Path.home() / 'dev/aseker00/modi/treebank/spmrl/heb/seqtag'
 ft_root_path = Path.home() / 'dev/aseker00/fasttext'
-seq_type = 'morpheme'
+seq_type = 'morpheme-type'
 dev_set_path = Path(f'{seq_type}_dev.pth')
 test_set_path = Path(f'{seq_type}_test.pth')
 train_set_path = Path(f'{seq_type}_train.pth')
@@ -24,7 +24,7 @@ if dev_set_path.exists() and test_set_path.exists() and train_set_path.exists():
     vocab = ds.load_vocab(root_path / f'{seq_type}/vocab')
 else:
     partition = ['dev', 'test', 'train']
-    token_samples, morph_samples, vocab = ds.load_samples(root_path, partition, seq_type, 'var')
+    token_samples, morph_samples, vocab = ds.load_samples(root_path, partition, seq_type, 'fixed')
     token_samples = {t: torch.tensor(token_samples[t][0], dtype=torch.long) for t in token_samples}
     morph_samples = {t: torch.tensor(morph_samples[t], dtype=torch.long) for t in morph_samples}
     token_lengths = {t: torch.tensor(token_samples[t][1], dtype=torch.long, requires_grad=False) for t in token_samples}
@@ -48,15 +48,9 @@ num_tags = len(vocab['tags'])
 max_tag_seq_len = train_set.tensors[-1].shape[2]
 tag_emb = nn.Embedding(num_embeddings=num_tags, embedding_dim=100, padding_idx=0)
 token_char_emb = TokenCharEmbedding(token_ft_emb, char_ft_emb, 50)
-# token_encoder = BatchEncoder(token_char_emb.embedding_dim, 300, 1, 0.0)
-token_encoder = nn.LSTM(input_size=token_char_emb.embedding_dim, hidden_size=300, num_layers=1, bidirectional=True,
-                        batch_first=True, dropout=0.0)
-# model = FixedSequenceClassifier(token_char_emb, token_encoder, 0.0, max_tag_seq_len, num_tags)
-tag_decoder = SequenceStepDecoder(token_char_emb.embedding_dim + tag_emb.embedding_dim, token_encoder.hidden_size * 2, 1, 0.0, num_tags)
-sos = torch.tensor([vocab['tag2id']['<SOS>']], dtype=torch.long, device=device)
-eot = torch.tensor([vocab['tag2id']['<EOT>']], dtype=torch.long, device=device)
-model = Seq2SeqClassifier(token_char_emb, token_encoder, tag_emb, tag_decoder, max_tag_seq_len, sos, eot)
-if device:
+token_encoder = BatchEncoder(token_char_emb.embedding_dim, 300, 1, 0.0)
+model = FixedSequenceClassifier(token_char_emb, token_encoder, 0.0, max_tag_seq_len, num_tags)
+if device is not None:
     model.to(device)
 print(model)
 
@@ -74,19 +68,13 @@ for epoch in range(3):
         b_morphemes = batch[2]
         b_tags = b_morphemes[:, :, :, 2]
         b_token_mask = b_tokens[:, :, 0, 0] != 0
-        b_tags_mask = b_tags != 0
-        [b_max_tokens, b_max_chars] = b_token_lengths[:, :].max(dim=1)[0][0].tolist()
-        # scores = model(tokens, token_lengths)
-        # losses = model.loss(scores, tags, token_mask)
-        # for loss in losses[:-1]:
-        #     loss.backward(retain_graph=True)
-        #     print(f'{i}, {loss.item()}')
-        # loss = losses[-1]
-        b_scores = model(b_tokens, b_token_lengths, b_tags)
-        # loss_tags = tags[tag_mask]
-        # loss_tags_mask = loss_tags != vocab['tag2id']['<EOT>']
-        # loss = model.loss(scores[:, loss_tags_mask], loss_tags[loss_tags_mask])
-        b_loss = model.loss(b_scores, b_tags[b_tags_mask])
+        # [b_max_tokens, b_max_chars] = b_token_lengths[:, :].max(dim=1)[0][0].tolist()
+        b_scores = model(b_tokens, b_token_lengths)
+        losses = model.loss(b_scores, b_tags, b_token_mask)
+        for loss in losses[:-1]:
+            loss.backward(retain_graph=True)
+            print(f'{i}, {loss.item()}')
+        b_loss = losses[-1]
         b_loss.backward()
         adam.step()
         adam.zero_grad()

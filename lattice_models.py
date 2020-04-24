@@ -116,10 +116,10 @@ class LatticeTokenPtrNet(nn.Module):
             dec_analysis_weights = self.analysis_attn(dec_scores, enc_token_lattice)
             scores.append(dec_analysis_weights)
             if gold_indices is not None:
-                pred_analysis_indices = gold_indices[:, cur_token_idx]
+                pred_analysis_indices = gold_indices[:, cur_token_idx].unsqueeze(dim=1)
             else:
                 pred_analysis_indices = self.decode(dec_analysis_weights)
-            embed_analysis = embed_lattice[:, cur_token_idx, pred_analysis_indices]
+            embed_analysis = embed_lattice[:, cur_token_idx][:, pred_analysis_indices[:, 0]]
         return scores
 
     def get_lattice_pointers2(self, enc_lattice, hidden_state, embed_lattice, embed_tokens, token_lengths, lattice_mask, gold_indices):
