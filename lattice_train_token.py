@@ -30,12 +30,12 @@ if dev_set_path.exists() and test_set_path.exists() and train_set_path.exists():
 else:
     partition = ['dev', 'test', 'train']
     token_samples, lattice_samples, vocab = ds.load_inf_samples(root_path, partition, seq_type)
-    token_samples = {t: torch.tensor(token_samples[t][0], dtype=torch.long) for t in token_samples}
-    lattice_samples = {t: torch.tensor(lattice_samples[t][0], dtype=torch.long) for t in lattice_samples}
     token_lengths = {t: torch.tensor(token_samples[t][1], dtype=torch.long, requires_grad=False)
                      for t in token_samples}
     analysis_lengths = {t: torch.tensor(lattice_samples[t][1], dtype=torch.long, requires_grad=False)
                         for t in lattice_samples}
+    token_samples = {t: torch.tensor(token_samples[t][0], dtype=torch.long) for t in token_samples}
+    lattice_samples = {t: torch.tensor(lattice_samples[t][0], dtype=torch.long) for t in lattice_samples}
     dev_set = TensorDataset(token_samples['dev'], token_lengths['dev'], lattice_samples['dev'],
                             analysis_lengths['dev'])
     test_set = TensorDataset(token_samples['test'], token_lengths['test'], lattice_samples['test'],
@@ -146,14 +146,21 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
         b_lattice = batch[2][:, :, :, :, 1:]
         b_analysis_lengths = batch[3]
         b_token_mask = b_tokens[:, :, 0, 0] != 0
-        b_gold_indices = torch.ones((b_is_gold.shape[0], b_is_gold.shape[1]), dtype=torch.long, device=device, requires_grad=False) * (-1)
+        b_batch_size = b_lattice.shape[0]
+        b_token_seq_size = b_lattice.shape[1]
+        b_analysis_seq_size = b_lattice.shape[2]
+        b_gold_indices = torch.ones((b_is_gold.shape[0], b_is_gold.shape[1]), dtype=torch.long, device=device,
+                                    requires_grad=False) * (-1)
+        b_lattice_mask_index = torch.arange(b_analysis_seq_size, dtype=torch.long, device=device,
+                                            requires_grad=False).repeat(b_batch_size, b_token_seq_size, 1)
+        b_lattice_mask = torch.lt(b_lattice_mask_index, b_analysis_lengths.unsqueeze(dim=2))
         for idx in b_is_gold.nonzero():
             b_gold_indices[idx[0], idx[1]] = idx[2]
         teach = optimizer is not None and (teacher_forcing is None or random.uniform(0, 1) < teacher_forcing)
         if teach:
-            b_scores = model(b_lattice, b_analysis_lengths, b_tokens, b_token_lengths, b_gold_indices)
+            b_scores = model(b_lattice, b_lattice_mask, b_tokens, b_token_lengths, b_gold_indices)
         else:
-            b_scores = model(b_lattice, b_analysis_lengths, b_tokens, b_token_lengths)
+            b_scores = model(b_lattice, b_lattice_mask, b_tokens, b_token_lengths)
         # mask = torch.arange(lattice.shape[2]).repeat(1, lattice.shape[1], 1) < analysis_lengths.unsqueeze(dim=2).repeat(1, 1, lattice.shape[2])
         b_loss = model.loss(b_scores, b_gold_indices, b_token_mask)
         print_loss += b_loss
@@ -183,4 +190,3 @@ for i in trange(epochs, desc="Epoch"):
     with torch.no_grad():
         run_data(epoch, 'dev-inf', dev_data, 10, ptrnet)
         run_data(epoch, 'test-inf', test_data, 10, ptrnet)
-

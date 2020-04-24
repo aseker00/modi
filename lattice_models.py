@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-# import numpy as np
 
 
 class MorphEmbedding(nn.Module):
@@ -66,20 +65,22 @@ class LatticeTokenPtrNet(nn.Module):
         self.analysis_attn = analysis_attn
         self.sos = sos
 
-    def forward(self, lattice, analysis_lengths, inputs, input_lengths, gold_indices=None):
+    def forward(self, lattice, lattice_mask, inputs, input_lengths, gold_indices=None):
         embed_lattice = self.lattice_emb(lattice)
         embed_inputs = self.input_emb(inputs, input_lengths)
         # embed_lattice = self.get_embed_input_lattice(embed_lattice, embed_inputs)
         batch_size = embed_lattice.shape[0]
-        input_seq_len = embed_lattice.shape[1]
-        analysis_seq_len = embed_lattice.shape[2]
-        lattice_mask_index = torch.arange(analysis_seq_len, dtype=torch.long).repeat(batch_size, input_seq_len, 1)
-        lattice_mask = torch.lt(lattice_mask_index, analysis_lengths.unsqueeze(dim=2))
+        # input_seq_len = embed_lattice.shape[1]
+        # analysis_seq_len = embed_lattice.shape[2]
+        # lattice_mask_index = torch.arange(analysis_seq_len, dtype=torch.long).repeat(batch_size, input_seq_len, 1)
+        # lattice_mask = torch.lt(lattice_mask_index, analysis_lengths.unsqueeze(dim=2))
         # lattice_mask_index = np.tile(np.arange(analysis_seq_len, dtype=np.int), (batch_size, input_seq_len, 1))
         # lattice_mask = np.less(lattice_mask_index, analysis_lengths.numpy().reshape(batch_size, input_seq_len, 1))
         enc_lattice, hidden_state = self.forward_lattice_encode(embed_lattice, lattice_mask)
-        scores = self.get_lattice_pointers2(enc_lattice, hidden_state, embed_lattice, embed_inputs, input_lengths, lattice_mask, gold_indices)
-        scores = [torch.nn.utils.rnn.pad_sequence([s[i, 0] for s in scores], batch_first=True, padding_value=-1e10) for i in range(batch_size)]
+        scores = self.get_lattice_pointers(enc_lattice, hidden_state, embed_lattice, embed_inputs, input_lengths,
+                                           lattice_mask, gold_indices)
+        scores = [torch.nn.utils.rnn.pad_sequence([s[i, 0] for s in scores], batch_first=True, padding_value=-1e10)
+                  for i in range(batch_size)]
         return torch.stack(scores, dim=0)
 
     def get_embed_input_lattice(self, embed_lattice, embed_inputs):
@@ -100,10 +101,12 @@ class LatticeTokenPtrNet(nn.Module):
         dec_hidden_state = (dec_h, dec_c)
         return enc_lattice, dec_hidden_state
 
-    def get_lattice_pointers(self, enc_lattice, hidden_state, embed_lattice, embed_tokens, token_lengths, lattice_mask, gold_indices):
+    def get_lattice_pointers(self, enc_lattice, hidden_state, embed_lattice, embed_tokens, token_lengths, lattice_mask,
+                             gold_indices):
         scores = []
         batch_size = embed_lattice.shape[0]
-        embed_analysis = self.lattice_emb(self.sos.repeat(batch_size).view(batch_size, 1, 1, 1, -1)).view(batch_size, 1, -1)
+        embed_analysis = self.lattice_emb(self.sos.repeat(batch_size).view(batch_size, 1, 1, 1, -1)).view(batch_size,
+                                                                                                          1, -1)
         packed_lattice_mask = lattice_mask.nonzero()
         while torch.any(len(scores) < token_lengths[:, 0, 0]):
             cur_token_idx = len(scores)
@@ -122,11 +125,13 @@ class LatticeTokenPtrNet(nn.Module):
             embed_analysis = embed_lattice[:, cur_token_idx][:, pred_analysis_indices[:, 0]]
         return scores
 
-    def get_lattice_pointers2(self, enc_lattice, hidden_state, embed_lattice, embed_tokens, token_lengths, lattice_mask, gold_indices):
+    def get_lattice_pointers2(self, enc_lattice, hidden_state, embed_lattice, embed_tokens, token_lengths, lattice_mask,
+                              gold_indices):
         scores = []
         batch_size = embed_lattice.shape[0]
         token_seq_len = embed_lattice.shape[1]
-        embed_analysis = self.lattice_emb(self.sos.repeat(batch_size).view(batch_size, 1, 1, 1, -1)).view(batch_size, 1, -1)
+        embed_analysis = self.lattice_emb(self.sos.repeat(batch_size).view(batch_size, 1, 1, 1, -1)).view(batch_size,
+                                                                                                          1, -1)
         token_indices = torch.zeros(batch_size, dtype=torch.long, requires_grad=False)
         token_ranges = torch.arange(token_seq_len, dtype=torch.long, requires_grad=False).repeat(batch_size, 1)
         packed_lattice_mask = lattice_mask.nonzero()
@@ -160,7 +165,8 @@ class LatticeTokenPtrNet(nn.Module):
             missing_gold_indices = missing_gold_indices[gold_indices[token_masks]]
             loss = loss_fct(lattice_scores[~missing_gold_indices], gold_indices[~missing_gold_indices])
         else:
-            loss = loss_fct(lattice_scores.view(lattice_scores.shape[0] * lattice_scores.shape[1], -1), gold_indices[token_masks])
+            loss = loss_fct(lattice_scores.view(lattice_scores.shape[0] * lattice_scores.shape[1], -1),
+                            gold_indices[token_masks])
         return loss
 
     def decode(self, lattice_scores):
