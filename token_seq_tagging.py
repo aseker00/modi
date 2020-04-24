@@ -1,7 +1,7 @@
 from models import *
-import heb_sprml_treebank_dataset as ds
-import heb_spmrl_treebank as tb
-from pos_tagging_utils import *
+import seqtag_dataset as ds
+import seqtag_treebank as tb
+from utils import *
 from torch.optim.adamw import AdamW
 from torch.utils.data.dataloader import DataLoader
 from pathlib import Path
@@ -12,8 +12,8 @@ ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
 # sys.path.insert(0, str(root_dir_path))
 
 partition = tb.load_lattices(root_dir_path, ['dev', 'test', 'train'])
-token_vocab, _, gold_dataset = ds.load_token_dataset(root_dir_path, partition)
-char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = ds.load_token_ft_emb(root_dir_path, ft_root_dir_path, token_vocab)
+vocab, _, gold_dataset = ds.load_token_dataset(root_dir_path, partition)
+char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = ds.load_token_ft_emb(root_dir_path, ft_root_dir_path, vocab)
 
 train_dataset = gold_dataset['train']
 dev_dataset = gold_dataset['dev']
@@ -24,8 +24,8 @@ test_dataloader = DataLoader(test_dataset, batch_size=1)
 
 
 device = None
-num_tags = len(token_vocab['tags'])
-tag2id = {v: i for i, v in enumerate(token_vocab['tags'])}
+num_tags = len(vocab['tags'])
+tag2id = {v: i for i, v in enumerate(vocab['tags'])}
 token_char_emb = TokenCharRNNEmbedding(char_ft_emb, 300, 1, 0.0)
 token_emb = TokenEmbedding(token_ft_emb, token_char_emb, 0.7)
 token_encoder = BatchTokenRNN(token_emb.embedding_dim, 300, 1, 0.0)
@@ -124,7 +124,7 @@ def run_epoch(epoch, phase, print_every, data, tagger, optimizer=None, max_steps
         decoded_token_tags = batch_mask_select_reconstruct(decoded_tags, tag_indices, tag_masks, tag2id['_'])
         decoded_token_tags_mask = decoded_token_tags != 0
         gold_token_tags_mask = gold_token_tags != 0
-        samples = to_samples(decoded_token_tags, gold_token_tags, decoded_token_tags_mask, gold_token_tags_mask, tokens, token_lengths, token_vocab)
+        samples = to_samples(decoded_token_tags, gold_token_tags, decoded_token_tags_mask, gold_token_tags_mask, tokens, token_lengths, vocab)
         print_samples.append(samples)
         epoch_samples.append(samples)
         print_loss += tag_loss

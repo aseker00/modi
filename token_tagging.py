@@ -2,26 +2,26 @@ from torch.optim.adamw import AdamW
 from torch.utils.data.dataloader import DataLoader
 
 from models import *
-import heb_sprml_treebank_dataset as ds
-import heb_spmrl_treebank as tb
-from pos_tagging_utils import *
+import seqtag_dataset as ds
+import seqtag_treebank as tb
+from utils import *
 
 
 from pathlib import Path
 root_dir_path = Path.home() / 'dev/aseker00/modi'
 ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
 partition = tb.load_lattices(root_dir_path, ['dev', 'test', 'train'])
-token_vocab, token_dataset = ds.load_token_dataset(root_dir_path, partition)
-char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = ds.load_token_ft_emb(root_dir_path, ft_root_dir_path, token_vocab)
+vocab, gold_dataset = ds.load_token_dataset(root_dir_path, partition)
+char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = ds.load_token_ft_emb(root_dir_path, ft_root_dir_path, vocab)
 
-train_dataset = token_dataset['train']
-dev_dataset = token_dataset['dev']
-test_dataset = token_dataset['test']
+train_dataset = gold_dataset['train']
+dev_dataset = gold_dataset['dev']
+test_dataset = gold_dataset['test']
 train_dataloader = DataLoader(train_dataset, batch_size=32, shuffle=True)
 dev_dataloader = DataLoader(dev_dataset, batch_size=32)
 test_dataloader = DataLoader(test_dataset, batch_size=32)
 
-num_tags = len(token_vocab['tags'])
+num_tags = len(vocab['tags'])
 token_char_emb = TokenCharRNNEmbedding(char_ft_emb, 60, 1, 0.0)
 token_emb = TokenEmbedding(token_ft_emb, token_char_emb, 0.1)
 token_encoder = BatchTokenRNN(token_emb.embedding_dim, 200, 2, 0.1)
@@ -76,7 +76,7 @@ def run_epoch(epoch, phase, print_every, data, tagger, optimizer=None):
         mask_tag_seq = torch.stack([mask, mask, mask], dim=2).view(mask.shape[0], -1)
         # pred_tags = pred_tags.view(pred_tags.shape[0], pred_tags[1] * pred_tags[2], -1)
         # .transpose(dim0=1, dim1=2).view(pred_tags.shape[0], pred_tags[1] * pred_tags[2], -1)
-        samples = to_samples(pred_tag_seq, gold_tag_seq, mask_tag_seq, mask_tag_seq, token_seq, seq_lengths, token_vocab)
+        samples = to_samples(pred_tag_seq, gold_tag_seq, mask_tag_seq, mask_tag_seq, token_seq, seq_lengths, vocab)
         print_samples.append(samples)
         epoch_samples.append(samples)
         print_loss += sum(tag_losses)
