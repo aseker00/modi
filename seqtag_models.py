@@ -41,7 +41,7 @@ class FixedSequenceClassifier(nn.Module):
         self.input_emb = input_emb
         self.encoder = encoder
         self.dropout = nn.Dropout(dropout)
-        self.classifiers = [nn.Linear(encoder.hidden_size, num_classes) for _ in range(max_seq_len)]
+        self.classifiers = nn.ModuleList([nn.Linear(encoder.hidden_size, num_classes) for _ in range(max_seq_len)])
 
     @property
     def num_labels(self):

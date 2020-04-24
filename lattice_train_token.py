@@ -1,6 +1,6 @@
 import random
 
-from torch.optim.adamw import AdamW, Optimizer
+from torch.optim.adamw import AdamW
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import TensorDataset
 from tqdm import trange
