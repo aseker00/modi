@@ -123,13 +123,13 @@ def to_sample(tokens, token_mask, lattice, gold_indices, pred_indices):
     token_sample = tokens[-1, token_mask[-1], 0, 0]
     gold_sample_tags = gold_sample[:, :, 2][gold_sample[:, :, 2] != 0]
     pred_sample_tags = pred_sample[:, :, 2][pred_sample[:, :, 2] != 0]
-    return token_sample, gold_sample_tags, pred_sample_tags
+    return token_sample.cpu(), gold_sample_tags.cpu(), pred_sample_tags.cpu()
 
 
 def print_sample(sample):
-    print(to_token_vec(sample[0].numpy()))
-    print(to_tag_vec(sample[1].numpy()))
-    print(to_tag_vec(sample[2].numpy()))
+    print(f'tokens: {to_token_vec(sample[0].numpy())}')
+    print(f'gold: {to_tag_vec(sample[1].numpy())}')
+    print(f'pred: {to_tag_vec(sample[2].numpy())}')
 
 
 def to_lattice():
