@@ -1,5 +1,5 @@
 import random
-from sklearn.metrics import precision_recall_fscore_support, classification_report, confusion_matrix
+from sklearn.metrics import classification_report
 
 from torch.optim.adamw import AdamW
 from torch.utils.data.dataloader import DataLoader
@@ -111,21 +111,10 @@ class ModelOptimizer:
         self.optimizer.zero_grad()
 
 
-def to_sample(tokens, token_mask, lattice, gold_indices, pred_indices):
-    gold_sample_indices = gold_indices[-1, token_mask[-1]]
-    pred_sample_indices = pred_indices[-1]
-    gold_sample = lattice[-1, token_mask[-1], gold_sample_indices]
-    pred_sample = lattice[-1, token_mask[-1], pred_sample_indices]
-    token_sample = tokens[-1, token_mask[-1], 0, 0]
-    gold_sample_tags = gold_sample[:, :, 2][gold_sample[:, :, 2] != 0]
-    pred_sample_tags = pred_sample[:, :, 2][pred_sample[:, :, 2] != 0]
-    return token_sample.cpu().numpy(), gold_sample_tags.cpu().numpy(), pred_sample_tags.cpu().numpy()
-
-
-def print_sample(sample):
-    print(f'tokens: {ds.to_token_vec(sample[0], vocab)}')
-    print(f'gold: {ds.to_tag_vec(sample[1], vocab)}')
-    print(f'pred: {ds.to_tag_vec(sample[2], vocab)}')
+def print_sample_labels(sample):
+    print(f'tokens: {sample[0]}')
+    print(f'gold: {sample[1]}')
+    print(f'pred: {sample[2]}')
 
 
 def to_lattice_data(tokens, token_mask, lattice, analysis_indices):
@@ -145,21 +134,21 @@ def pack_lattice(lattice, mask, indices):
     return torch.gather(lattice[mask], 1, index).squeeze(1)
 
 
-def to_tags(token_mask, lattice, analysis_indices):
+def to_tags_arr(token_mask, lattice, analysis_indices):
     lattice_sample = pack_lattice(lattice, token_mask, analysis_indices)
     lattice_sample = lattice_sample.cpu().numpy()
     return ds.to_tag_vec(lattice_sample[:, :, 2], vocab)
 
 
-def to_tokens(tokens, token_mask):
+def to_tokens_arr(tokens, token_mask):
     token_sample = tokens[:, :, 0, 0][token_mask]
     token_sample = token_sample.cpu().numpy()
     return ds.to_token_vec(token_sample, vocab)
 
 
 def print_label_metrics(samples):
-    pred_labels = [tag for sample in samples for tags in sample[0] for tag in tags]
     gold_labels = [tag for sample in samples for tags in sample[1] for tag in tags]
+    pred_labels = [tag for sample in samples for tags in sample[2] for tag in tags]
     labels = set(pred_labels + gold_labels)
     labels.discard('<PAD>')
     print(classification_report(gold_labels, pred_labels, labels=list(labels)))
@@ -169,7 +158,7 @@ def print_label_metrics(samples):
 
 def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_forcing=None):
     total_loss, print_loss = 0, 0
-    total_tags, print_tags = [], []
+    total_labels, print_labels = [], []
     for i, batch in enumerate(data):
         batch = tuple(t.to(device) for t in batch)
         b_tokens = batch[0]
@@ -199,24 +188,23 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
         print_loss += b_loss
         total_loss += b_loss
         b_pred_indices = model.decode(b_scores)
-        b_pred_tags = to_tags(b_token_mask, b_lattice, b_pred_indices)
-        b_gold_tags = to_tags(b_token_mask, b_lattice, b_gold_indices)
-        print_tags.append((b_gold_tags, b_pred_tags))
-        total_tags.append((b_gold_tags, b_pred_tags))
+        pred_labels_arr = to_tags_arr(b_token_mask, b_lattice, b_pred_indices)
+        gold_labels_arr = to_tags_arr(b_token_mask, b_lattice, b_gold_indices)
+        gold_tokens_arr = to_tokens_arr(b_tokens, b_token_mask)
+        print_labels.append((gold_tokens_arr, gold_labels_arr, pred_labels_arr))
+        total_labels.append((gold_tokens_arr, gold_labels_arr, pred_labels_arr))
         if optimizer is not None:
             optimizer.step(b_loss)
         if (i + 1) % print_every == 0:
             print(f'epoch {epoch}, {phase} step {i + 1}, loss: {print_loss / print_every}')
-            print_label_metrics(print_tags)
-            # sample = to_sample(b_tokens, b_token_mask, b_lattice, b_gold_indices, b_pred_indices)
-            b_gold_tokens = to_tokens(b_tokens, b_token_mask)
-            print_sample()
+            print_label_metrics(print_labels)
+            print_sample_labels(print_labels[-1])
             print_loss = 0
-            print_tags = []
+            print_labels = []
     if optimizer is not None:
         optimizer.force_step()
     print(f'epoch {epoch}, {phase} total loss: {total_loss / len(data)}')
-    print_label_metrics(total_tags)
+    print_label_metrics(total_labels)
 
 
 lr = 1e-3
