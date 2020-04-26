@@ -24,7 +24,7 @@ def save_lattices_vocab(root_path, partition):
     save_vocab(root_path / 'vocab', vocab)
 
 
-def to_lattice_morpheme_sample_row(row, vocab, feat_map, infuse):
+def to_morpheme_row(row, vocab, feat_map, infuse):
     form_id = vocab['form2id'][row.form]
     lemma_id = vocab['lemma2id'][row.lemma]
     tag_id = vocab['tag2id'][row.tag]
@@ -38,15 +38,15 @@ def to_lattice_morpheme_sample_row(row, vocab, feat_map, infuse):
     return values
 
 
-def get_uninf_lattice_seq_samples(df, vocab, max_morphemes):
-    return get_lattice_seq_samples(df, vocab, max_morphemes, False)
+def get_uninf_lattices_arr(df, vocab, max_morphemes):
+    return get_lattices_arr(df, vocab, max_morphemes, False)
 
 
-def get_inf_lattice_seq_samples(df, vocab, max_morphemes):
-    return get_lattice_seq_samples(df, vocab, max_morphemes, True)
+def get_inf_lattices_arr(df, vocab, max_morphemes):
+    return get_lattices_arr(df, vocab, max_morphemes, True)
 
 
-def get_lattice_seq_samples(df, vocab, max_morphemes, infuse):
+def get_lattices_arr(df, vocab, max_morphemes, infuse):
     feat_map = {i+1: f for i, f in enumerate(df) if f[:5] == 'feat_'}
     column_names = ['sent_idx', 'token_idx', 'analysis_idx', 'morpheme_idx']
     gold_column_names = ['is_gold']
@@ -55,7 +55,7 @@ def get_lattice_seq_samples(df, vocab, max_morphemes, infuse):
     column_names += gold_column_names
     column_names += morph_column_names
     column_names += feat_column_names
-    sample_rows = [to_lattice_morpheme_sample_row(row, vocab, feat_map, infuse) for row in df.itertuples() ]
+    sample_rows = [to_morpheme_row(row, vocab, feat_map, infuse) for row in df.itertuples() ]
     samples_df = pd.DataFrame(sample_rows, columns=column_names)
     num_samples = samples_df.sent_idx.max()
     max_len = samples_df.token_idx.max()
@@ -78,19 +78,19 @@ def get_lattice_seq_samples(df, vocab, max_morphemes, infuse):
     return samples_arr[samples_df.sent_idx.unique() - 1], analysis_length_arr[samples_df.sent_idx.unique() - 1]
 
 
-def load_inf_samples(root_path, partition, morph_level):
-    return load_data_samples(root_path / morph_level, partition, 'lattices-inf', get_inf_lattice_seq_samples)
+def load_inf_lattices(root_path, partition, morph_level):
+    return load_data_samples(root_path / morph_level, partition, 'lattices-inf', get_inf_lattices_arr)
 
 
-def sample_to_data(token_ids, lattice_sample, vocab):
+def lattice_to_data(token_ids, lattice, vocab):
     column_names = ['from_node_id', 'to_node_id', 'form', 'lemma', 'tag', 'feats', 'token_id', 'token', 'analysis_id', 'morpheme_id']
-    analysis_indices = lattice_sample[:, :, 0].nonzero()
+    analysis_indices = lattice[:, :, 0].nonzero()
     token_indices = analysis_indices[0]
     morpheme_indices = analysis_indices[1]
-    form_ids = lattice_sample[:, :, 0]
-    lemma_ids = lattice_sample[:, :, 1]
-    tag_ids = lattice_sample[:, :, 2]
-    feat_ids = lattice_sample[:, :, 3:]
+    form_ids = lattice[:, :, 0]
+    lemma_ids = lattice[:, :, 1]
+    tag_ids = lattice[:, :, 2]
+    feat_ids = lattice[:, :, 3:]
     # Remove <PAD>s and transform into vocab values
     mask = form_ids != 0
     tokens = to_token_vec(token_ids, vocab)
@@ -121,7 +121,7 @@ def main():
     # ft_root_path = Path.home() / 'dev/aseker00/fasttext'
     # save_lattices_vocab(root_path / 'lattice', partition)
     # save_ft_vec(root_path / 'lattice/vocab', ft_root_path)
-    token_samples, lattice_samples, vocab = load_inf_samples(root_path, partition, 'lattice')
+    token_samples, lattice_samples, vocab = load_inf_lattices(root_path, partition, 'lattice')
 
 
 if __name__ == '__main__':

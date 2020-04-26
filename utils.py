@@ -1,6 +1,7 @@
 from sklearn.metrics import classification_report
-import torch.nn.functional as F
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 
 def batch_narrow(tokens, chars, char_lengths, token_lengths, labels):
@@ -104,3 +105,49 @@ def print_sample(pred, gold, ignore_lables):
     print([p for p in pred[0]])
     print([p for p in pred[1] if p not in ignore_lables])
     print([g for g in gold[1] if g not in ignore_lables])
+
+
+class ModelOptimizer:
+    def __init__(self, step_every, optimizer, parameters, max_grad_norm):
+        self.optimizer = optimizer
+        self.parameters = parameters
+        self.max_grad_norm = max_grad_norm
+        self.step_every = step_every
+        self.steps = 0
+
+    def step(self, losses):
+        self.steps += 1
+        # loss = loss/self.step_every
+        for loss in losses[:-1]:
+            loss.backward(retain_graph=True)
+        loss = losses[-1]
+        loss.backward()
+        if self.steps % self.step_every == 0:
+            self._step()
+
+    def force_step(self):
+        if self.steps % self.step_every > 0:
+            self._step()
+
+    def _step(self):
+        if self.max_grad_norm > 0:
+            nn.utils.clip_grad_norm_(parameters=self.parameters, max_norm=self.max_grad_norm)
+        self.optimizer.step()
+        self.optimizer.zero_grad()
+
+
+def print_sample_labels(sample):
+    print(f'tokens: {sample[0]}')
+    print(f'gold: {sample[1]}')
+    print(f'pred: {sample[2]}')
+
+
+def print_label_metrics(samples, remove_labels):
+    gold_labels = [tag for sample in samples for tags in sample[1] for tag in tags]
+    pred_labels = [tag for sample in samples for tags in sample[2] for tag in tags]
+    labels = set(pred_labels + gold_labels)
+    for label in remove_labels:
+        labels.discard(label)
+    print(classification_report(gold_labels, pred_labels, labels=list(labels)))
+    # print(confusion_matrix(gold_tags, pred_tags))
+    # precision, recall, fscore, support = precision_recall_fscore_support(gold_tags, pred_tags)

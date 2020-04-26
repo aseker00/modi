@@ -70,12 +70,6 @@ class LatticeTokenPtrNet(nn.Module):
         embed_inputs = self.input_emb(inputs, input_lengths)
         # embed_lattice = self.get_embed_input_lattice(embed_lattice, embed_inputs)
         batch_size = embed_lattice.shape[0]
-        # input_seq_len = embed_lattice.shape[1]
-        # analysis_seq_len = embed_lattice.shape[2]
-        # lattice_mask_index = torch.arange(analysis_seq_len, dtype=torch.long).repeat(batch_size, input_seq_len, 1)
-        # lattice_mask = torch.lt(lattice_mask_index, analysis_lengths.unsqueeze(dim=2))
-        # lattice_mask_index = np.tile(np.arange(analysis_seq_len, dtype=np.int), (batch_size, input_seq_len, 1))
-        # lattice_mask = np.less(lattice_mask_index, analysis_lengths.numpy().reshape(batch_size, input_seq_len, 1))
         enc_lattice, hidden_state = self.forward_lattice_encode(embed_lattice, lattice_mask)
         scores = self.get_lattice_pointers(enc_lattice, hidden_state, embed_lattice, embed_inputs, input_lengths,
                                            lattice_mask, gold_indices)
@@ -105,8 +99,7 @@ class LatticeTokenPtrNet(nn.Module):
                              gold_indices):
         scores = []
         batch_size = embed_lattice.shape[0]
-        embed_analysis = self.lattice_emb(self.sos.repeat(batch_size).view(batch_size, 1, 1, 1, -1)).view(batch_size,
-                                                                                                          1, -1)
+        embed_analysis = self.lattice_emb(self.sos.repeat(batch_size).view(batch_size, 1, 1, 1, -1)).view(batch_size, 1, -1)
         packed_lattice_mask = lattice_mask.nonzero()
         while torch.any(len(scores) < token_lengths[:, 0, 0]):
             cur_token_idx = len(scores)
@@ -123,37 +116,6 @@ class LatticeTokenPtrNet(nn.Module):
             else:
                 pred_analysis_indices = self.decode(dec_analysis_weights)
             embed_analysis = embed_lattice[:, cur_token_idx][:, pred_analysis_indices[:, 0]]
-        return scores
-
-    def get_lattice_pointers2(self, enc_lattice, hidden_state, embed_lattice, embed_tokens, token_lengths, lattice_mask,
-                              gold_indices):
-        scores = []
-        batch_size = embed_lattice.shape[0]
-        token_seq_len = embed_lattice.shape[1]
-        embed_analysis = self.lattice_emb(self.sos.repeat(batch_size).view(batch_size, 1, 1, 1, -1)).view(batch_size,
-                                                                                                          1, -1)
-        token_indices = torch.zeros(batch_size, dtype=torch.long, requires_grad=False)
-        token_ranges = torch.arange(token_seq_len, dtype=torch.long, requires_grad=False).repeat(batch_size, 1)
-        packed_lattice_mask = lattice_mask.nonzero()
-        while torch.any(torch.lt(token_indices, token_lengths[:, 0, 0])):
-            lattice_token_mask = packed_lattice_mask[:, 1] == token_indices
-            enc_token_lattice = enc_lattice[:, lattice_token_mask]
-            token_index_mask = token_ranges == token_indices
-            if embed_tokens is not None:
-                embed_token = embed_tokens[token_index_mask].unsqueeze(dim=1)
-                embed_analysis = torch.cat([embed_analysis, embed_token], dim=2)
-            dec_scores, hidden_state = self.analysis_decoder(embed_analysis, hidden_state)
-            dec_analysis_weights = self.analysis_attn(dec_scores, enc_token_lattice)
-            scores.append(dec_analysis_weights)
-            if gold_indices is not None:
-                pred_analysis_indices = gold_indices[token_index_mask].unsqueeze(dim=1)
-            else:
-                pred_analysis_indices = self.decode(dec_analysis_weights)
-            # There is a question here: when using a boolean mask which generates a cloned tensor
-            # separate from the original embed_lattice, doesn't that screw up the backpropagation from reaching
-            # the lattice embedding (fasttext form and lemma + tag + feats embedding)?
-            embed_analysis = embed_lattice[token_index_mask][:, pred_analysis_indices[:, 0]]
-            token_indices += 1
         return scores
 
     def loss(self, lattice_scores, gold_indices, token_masks):

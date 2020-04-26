@@ -9,7 +9,7 @@ def save_gold_vocab(root_path, partition, tag_type):
     save_vocab(root_path / 'vocab', vocab)
 
 
-def to_morpheme_sample_row(row, vocab, morpheme_type):
+def to_morpheme_row(row, vocab, morpheme_type):
     form_id = vocab['form2id'][row.form]
     lemma_id = vocab['lemma2id'][row.lemma]
     tag_id = vocab['tag2id'][row.tag]
@@ -20,11 +20,11 @@ def to_morpheme_sample_row(row, vocab, morpheme_type):
     return values
 
 
-def get_fixed_morph_seq_samples(df, vocab, max_morphemes):
+def get_fixed_arr(df, vocab, max_morphemes):
     column_names = ['sent_idx', 'token_idx', 'analysis_idx', 'morpheme_idx']
     morph_column_names = ['form_id', 'lemma_id', 'tag_id', 'feats_id']
     column_names += morph_column_names
-    sample_rows = [to_morpheme_sample_row(row, vocab, True) for row in df.itertuples()]
+    sample_rows = [to_morpheme_row(row, vocab, True) for row in df.itertuples()]
     samples_df = pd.DataFrame(sample_rows, columns=column_names)
     num_samples = samples_df.sent_idx.max()
     max_len = samples_df.token_idx.max()
@@ -50,11 +50,11 @@ def get_fixed_morph_seq_samples(df, vocab, max_morphemes):
     return samples_arr[samples_df.sent_idx.unique() - 1]
 
 
-def get_var_morph_seq_samples(df, vocab, max_morphemes):
+def get_var_arr(df, vocab, max_morphemes):
     column_names = ['sent_idx', 'token_idx', 'analysis_idx', 'morpheme_idx']
     morph_column_names = ['form_id', 'lemma_id', 'tag_id', 'feats_id']
     column_names += morph_column_names
-    sample_rows = [to_morpheme_sample_row(row, vocab, False) for row in df.itertuples()]
+    sample_rows = [to_morpheme_row(row, vocab, False) for row in df.itertuples()]
     samples_df = pd.DataFrame(sample_rows, columns=column_names)
     max_sample = samples_df.sent_idx.max()
     max_len = samples_df.token_idx.max()
@@ -76,7 +76,7 @@ def get_var_morph_seq_samples(df, vocab, max_morphemes):
     # Now construct the sentence indices corresponding to the token indices
     fill_sent_indices = [fill_sent_indices[j].item() for j, i in enumerate(token_indices[token_mask]) for ii in
                          range(i + 1, max_len)]
-    # File Values
+    # Fill Values
     samples_arr[fill_sent_indices, fill_token_indices] = 0
 
     # Find token boundary indices - this is used to get number of morphemes in each token analysis
@@ -96,16 +96,14 @@ def get_var_morph_seq_samples(df, vocab, max_morphemes):
 def load_samples(root_path, partition, morph_level, seq_type):
     if morph_level == 'morpheme':
         if seq_type == 'fixed':
-            return load_data_samples(root_path / morph_level, partition, 'gold-lattices', get_fixed_morph_seq_samples)
+            return load_data_samples(root_path / morph_level, partition, 'gold-lattices', get_fixed_arr)
         elif seq_type == 'var':
-            return load_data_samples(root_path / morph_level, partition, 'gold-lattices', get_var_morph_seq_samples)
+            return load_data_samples(root_path / morph_level, partition, 'gold-lattices', get_var_arr)
     elif morph_level == 'morpheme-type':
         if seq_type == 'fixed':
-            return load_data_samples(root_path / morph_level, partition, 'gold-lattices-multi',
-                                     get_fixed_morph_seq_samples)
+            return load_data_samples(root_path / morph_level, partition, 'gold-lattices-multi', get_fixed_arr)
         elif seq_type == 'var':
-            return load_data_samples(root_path / morph_level, partition, 'gold-lattices-multi',
-                                     get_var_morph_seq_samples)
+            return load_data_samples(root_path / morph_level, partition, 'gold-lattices-multi', get_var_arr)
 
 
 def main():

@@ -2,7 +2,6 @@ import torch.nn as nn
 import torch
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence, pad_sequence
 from torchcrf import CRF
-import numpy as np
 
 
 class TokenCharEmbedding(nn.Module):
@@ -53,6 +52,7 @@ class FixedSequenceClassifier(nn.Module):
         enc_tokens = self.encoder(embed_tokens, token_lengths)
         enc_tokens = self.dropout(enc_tokens)
         enc_tokens = torch.tanh(enc_tokens)
+        # return self.classifiers(enc_tokens)
         return [classifier(enc_tokens) for classifier in self.classifiers]
 
     def loss(self, label_scores, gold_labels, label_masks):
@@ -132,8 +132,9 @@ class Seq2SeqClassifier(nn.Module):
     def forward(self, inputs, input_lengths, gold_labels=None):
         embed_inputs = self.enc_emb(inputs, input_lengths)
         dec_hidden_state = self.forward_encode(embed_inputs)
-        scores = self.get_input_seq_scores(dec_hidden_state, input_lengths[:, 0, 0], embed_inputs, gold_labels)
-        return torch.stack(scores, dim=1)
+        return self.get_label_seq_scores(dec_hidden_state, input_lengths[:, 0, 0], embed_inputs, gold_labels)
+        # scores = self.get_label_seq_scores(dec_hidden_state, input_lengths[:, 0, 0], embed_inputs, gold_labels)
+        # return torch.stack(scores, dim=1)
 
     def forward_encode(self, embed_inputs):
         batch_size = embed_inputs.shape[0]
@@ -147,72 +148,37 @@ class Seq2SeqClassifier(nn.Module):
         dec_hidden_state = (dec_h, dec_c)
         return dec_hidden_state
 
-    def get_input_seq_scores(self, hidden_state, input_lengths, embed_inputs, gold_labels):
-        scores = []
-        batch_size = input_lengths.shape[0]
-        # Initial <SOS> label
-        pred_label = self.sos.repeat(batch_size).view(batch_size, 1)
-        # embed_label = self.dec_emb(self.sos).repeat(batch_size).view(batch_size, 1, -1)
-        # Keep track of current token index and analysis morpheme index being decoded
-        input_indices = np.zeros(batch_size, dtype=np.int)
-        label_indices = np.zeros(batch_size, dtype=np.int)
-        # Stop when all current token indices have reached their input token lengths
-        # while np.any(np.less(input_indices, input_lengths[:, 0, 0].numpy())):
-        while np.any(np.less(input_indices, input_lengths.cpu().numpy())):
-            embed_label = self.dec_emb(pred_label)
-            # If embed inputs are available use the current token along with the previous label
-            if embed_inputs is not None:
-                embed_label = torch.cat([embed_label, embed_inputs[:, input_indices]], dim=2)
-            # Decode current label
-            dec_scores, hidden_state = self.decoder(embed_label, hidden_state)
-            scores.append(dec_scores.squeeze(dim=1))
-            # If gold label is available use it, otherwise use the decoded label
-            if gold_labels is not None:
-                pred_label = gold_labels[:, input_indices, label_indices]
-            else:
-                pred_label = self.decode(dec_scores)
-            # All labels beyond token lengths get <PAD> (this is only relevant for batch_size > 1, where one sentence
-            # may be done, but other sentences haven't reached their token lengths)
-            pred_label[:, input_indices == input_lengths.cpu().numpy()] = 0
-            # Get <EOT> mask, which is used as an indicator to increment token indices
-            # TODO: I think there's a bug here because if not using gold_labels for next pred_label it might be that
-            # TODO: the <EOT> is not present but we've reached max_label_seq_len so we need increment input index
-            # TODO: in this case
-            pred_label_mask = (pred_label.squeeze(dim=1) == self.eot).cpu().numpy()
-            # TODO: So I think the label indices should be checked for max label seq before incrementing input indices
-            pred_label_mask |= label_indices == self.max_label_seq_len - 1
-            input_indices += pred_label_mask
-            # Next we need to increment label indices and zero out label index if the token index incremented
-            # TODO: do we need to increment input index if label_index == max_label_seq_len?
-            # pred_label_mask |= label_indices == self.max_label_seq_len - 1
-            # Increment label indices wherever we haven't reached <EOT> or max_label_seq_len
-            label_indices += ~pred_label_mask
-            # Zero out label indices wherever we have reached <EOT> or max_lebel_seq_len
-            label_indices[pred_label_mask] = 0
-            # embed_label = self.dec_emb(pred_label)
-        return scores
-
     def get_label_seq_scores(self, hidden_state, token_lengths, embed_tokens, gold_labels):
-        scores = []
+        # I am using a tensor instead of just appending scores to a list because I want to keep track of the
+        # labels in the analysis [N * 6 * 51] structure (N - number of tokens, 6 - number of morphemes in an analysis,
+        # 51 - number of label scores)
+        # scores = []
+        scores = embed_tokens.new_full((embed_tokens.shape[0], embed_tokens.shape[1], self.max_label_seq_len,
+                                        self.decoder.num_labels), fill_value=-1e10, requires_grad=False)
+        scores[:, :, :, 0] = 0.0
         batch_size = embed_tokens.shape[0]
-        token_seq_len = embed_tokens.shape[1]
         embed_label = self.dec_emb(self.sos.repeat(batch_size).view(batch_size, 1))
-        token_indices = torch.zeros(batch_size, dtype=torch.long, requires_grad=False)
-        label_indices = torch.zeros(batch_size, dtype=torch.long, requires_grad=False)
-        token_ranges = torch.arange(token_seq_len, dtype=torch.long, requires_grad=False).repeat(batch_size, 1)
+        token_indices = torch.zeros_like(token_lengths)
+        label_indices = torch.zeros_like(token_lengths)
         while torch.any(torch.lt(token_indices, token_lengths)):
-            token_index_mask = token_ranges == token_indices
             if embed_tokens is not None:
-                embed_token = embed_tokens[token_index_mask].unsqueeze(dim=1)
+                index = token_indices.unsqueeze(dim=-1).unsqueeze(dim=-1).repeat(1, 1, embed_tokens.shape[-1])
+                embed_token = torch.gather(embed_tokens, 1, index)
                 embed_label = torch.cat([embed_label, embed_token], dim=2)
             dec_scores, hidden_state = self.decoder(embed_label, hidden_state)
-            scores.append(dec_scores.squeeze(dim=1))
+            # TODO: figure out why:
+            # TODO: scores[0, token_indices, label_indices] = dec_scores
+            # TODO: generates the following runtime error message:
+            # TODO: RuntimeError: one of the variables needed for gradient computation has been modified by an inplace
+            # TODO: operation: [torch.LongTensor [1]] is at version 41; expected version 40 instead.
+            scores[0, token_indices.item(), label_indices.item()] = dec_scores[0]
+            # scores.append(dec_scores.squeeze(dim=1))
             if gold_labels is not None:
-                # It is OK to use label indices after we use the boolean token index mask because the mask generates a
-                # cloned tensor separate from the gold labels tensor
-                pred_label = gold_labels[token_index_mask][:, label_indices]
+                index = token_indices.unsqueeze(dim=-1).unsqueeze(dim=-1).repeat(1, 1, gold_labels.shape[-1])
+                pred_label = torch.gather(gold_labels, 1, index)
+                pred_label = pred_label[:, :, label_indices].squeeze(dim=1)
             else:
-                pred_label = self.decode(dec_scores)
+                pred_label = self.decoder.decode(dec_scores)
             token_length_mask = token_lengths == token_indices
             # <PAD> all predictions beyond sentence tokens
             pred_label[token_length_mask] = 0
@@ -228,16 +194,12 @@ class Seq2SeqClassifier(nn.Module):
             embed_label = self.dec_emb(pred_label)
         return scores
 
-    def loss(self, label_scores, gold_labels):
+    def loss(self, label_scores, gold_labels, label_mask):
         loss_fct = nn.CrossEntropyLoss()
-        # masked_gold_labels = gold_labels.view(-1)[labels_mask.view(-1)]
-        # masked_label_scores = label_scores.view(-1, label_scores.shape[2])[labels_mask.view(-1)]
-        masked_gold_labels = gold_labels.view(-1)
-        masked_label_scores = label_scores.view(-1, label_scores.shape[2])
-        return loss_fct(masked_label_scores, masked_gold_labels)
+        return loss_fct(label_scores[label_mask], gold_labels[label_mask])
 
     def decode(self, label_scores):
-        return self.decoder.decode(label_scores)
+        return torch.argmax(label_scores, dim=3)
 
 
 class CrfClassifier(nn.Module):

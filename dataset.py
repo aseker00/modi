@@ -1,5 +1,4 @@
 from collections import defaultdict
-
 import fasttext_emb as ft
 import pandas as pd
 import numpy as np
@@ -96,7 +95,7 @@ def save_ft_vec(root_path, ft_root_path):
     ft.load_embedding_weight_matrix(ft_model_path, lemmas_vec_file_path, vocab['lemmas'])
 
 
-def load_ft_emb(root_path, ft_root_path, vocab):
+def load_ft_vec(root_path, ft_root_path, vocab):
     ft_model_path = ft_root_path / 'models/cc.he.300.bin'
     chars_vec_file_path = root_path / 'chars.vec'
     tokens_vec_file_path = root_path / 'tokens.vec'
@@ -108,7 +107,7 @@ def load_ft_emb(root_path, ft_root_path, vocab):
             ft.load_embedding_weight_matrix(ft_model_path, lemmas_vec_file_path, vocab['lemmas']))
 
 
-def to_token_sample_row(row, vocab, token_char_ids):
+def to_tokens_row(row, vocab, token_char_ids):
     if row.token in token_char_ids:
         token_id, char_ids = token_char_ids[row.token]
     else:
@@ -118,9 +117,9 @@ def to_token_sample_row(row, vocab, token_char_ids):
     return [[row.sent_id, row.token_id, i + 1, token_id, char_id] for i, char_id in enumerate(char_ids)]
 
 
-def get_token_seq_samples(df, vocab, column_names):
+def get_tokens_arr(df, vocab, column_names):
     token_char_ids = {}
-    sample_rows = [to_token_sample_row(row, vocab, token_char_ids) for row in df.itertuples()]
+    sample_rows = [to_tokens_row(row, vocab, token_char_ids) for row in df.itertuples()]
     samples_df = pd.DataFrame([row for sample in sample_rows for row in sample], columns=column_names)
     num_samples = samples_df.sent_idx.max()
     max_len = samples_df.token_idx.max()
@@ -154,16 +153,9 @@ def load_data_samples(root_path, partition, tag_type, morph_seq_func):
         file_path = root_path / f'{partition_type}-{tag_type}.csv'
         dataset[partition_type] = pd.read_csv(str(file_path), index_col=0)
         max_morphemes[partition_type] = dataset[partition_type].morpheme_id.max() + 1
-    token_samples = {t: get_token_seq_samples(dataset[t], vocab, token_column_names) for t in dataset}
+    token_samples = {t: get_tokens_arr(dataset[t], vocab, token_column_names) for t in dataset}
     morph_samples = {t: morph_seq_func(dataset[t], vocab, max_morphemes[partition[-1]]) for t in dataset}
     return token_samples, morph_samples, vocab
-
-
-to_form_vec = np.vectorize(lambda x, vocab: vocab['forms'][x])
-to_lemma_vec = np.vectorize(lambda x, vocab: vocab['lemmas'][x])
-to_tag_vec = np.vectorize(lambda x, vocab: vocab['tags'][x])
-to_feat_vec = np.vectorize(lambda x, vocab: vocab['feats'][x])
-to_token_vec = np.vectorize(lambda x, vocab: vocab['tokens'][x])
 
 
 def feats_to_str(feats):
@@ -185,3 +177,10 @@ def feats_to_str(feats):
                             s.append(f'{k}={v}')
             res.append('|'.join(s))
     return res
+
+
+to_form_vec = np.vectorize(lambda x, vocab: vocab['forms'][x])
+to_lemma_vec = np.vectorize(lambda x, vocab: vocab['lemmas'][x])
+to_tag_vec = np.vectorize(lambda x, vocab: vocab['tags'][x])
+to_feat_vec = np.vectorize(lambda x, vocab: vocab['feats'][x])
+to_token_vec = np.vectorize(lambda x, vocab: vocab['tokens'][x])
