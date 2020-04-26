@@ -1,4 +1,5 @@
 import random
+from sklearn.metrics import precision_recall_fscore_support, classification_report, confusion_matrix
 
 from torch.optim.adamw import AdamW
 from torch.utils.data.dataloader import DataLoader
@@ -61,6 +62,8 @@ else:
 train_data = DataLoader(train_set, batch_size=1, shuffle=True)
 dev_data = DataLoader(dev_set, batch_size=1)
 test_data = DataLoader(test_set, batch_size=1)
+
+device = None
 num_tags = len(vocab['tags'])
 num_feats = len(vocab['feats'])
 tag_emb = nn.Embedding(num_embeddings=num_tags, embedding_dim=50, padding_idx=0)
@@ -75,18 +78,11 @@ analysis_decoder = nn.LSTM(input_size=token_char_emb.embedding_dim + lattice_emb
 analysis_attn = SequenceStepAttention()
 sos = [vocab['form2id']['<SOS>'], vocab['lemma2id']['<SOS>'],
        vocab['tag2id']['<SOS>']] + [vocab['feats2id']['<SOS>']] * num_morpheme_feats
-
-device = None
 sos = torch.tensor(sos, dtype=torch.long, device=device)
 ptrnet = LatticeTokenPtrNet(lattice_emb, token_char_emb, lattice_encoder, analysis_decoder, analysis_attn, sos)
 if device is not None:
     ptrnet.to(device)
 print(ptrnet)
-
-to_tag = lambda x: vocab['tags'][x]
-to_token = lambda x: vocab['tokens'][x]
-to_tag_vec = np.vectorize(to_tag)
-to_token_vec = np.vectorize(to_token)
 
 
 class ModelOptimizer:
@@ -123,21 +119,57 @@ def to_sample(tokens, token_mask, lattice, gold_indices, pred_indices):
     token_sample = tokens[-1, token_mask[-1], 0, 0]
     gold_sample_tags = gold_sample[:, :, 2][gold_sample[:, :, 2] != 0]
     pred_sample_tags = pred_sample[:, :, 2][pred_sample[:, :, 2] != 0]
-    return token_sample.cpu(), gold_sample_tags.cpu(), pred_sample_tags.cpu()
+    return token_sample.cpu().numpy(), gold_sample_tags.cpu().numpy(), pred_sample_tags.cpu().numpy()
 
 
 def print_sample(sample):
-    print(f'tokens: {to_token_vec(sample[0].numpy())}')
-    print(f'gold: {to_tag_vec(sample[1].numpy())}')
-    print(f'pred: {to_tag_vec(sample[2].numpy())}')
+    print(f'tokens: {ds.to_token_vec(sample[0], vocab)}')
+    print(f'gold: {ds.to_tag_vec(sample[1], vocab)}')
+    print(f'pred: {ds.to_tag_vec(sample[2], vocab)}')
 
 
-def to_lattice():
-    pass
+def to_lattice_data(tokens, token_mask, lattice, analysis_indices):
+    token_sample = tokens[:, :, 0, 0][token_mask]
+    lattice_sample = pack_lattice(lattice, token_mask, analysis_indices)
+    return ds.sample_to_data(token_sample.cpu().numpy(), lattice_sample.cpu().numpy(), vocab)
+
+
+def pack_lattice(lattice, mask, indices):
+    morpheme_size = lattice.shape[-1]
+    analysis_size = lattice.shape[-2]
+    if indices.shape == mask.shape:
+        indices = indices[mask]
+    else:
+        indices = indices.squeeze(0)
+    index = indices.unsqueeze(-1).repeat(1, analysis_size).unsqueeze(-1).repeat(1, 1, morpheme_size).unsqueeze(1)
+    return torch.gather(lattice[mask], 1, index).squeeze(1)
+
+
+def to_tags(token_mask, lattice, analysis_indices):
+    lattice_sample = pack_lattice(lattice, token_mask, analysis_indices)
+    lattice_sample = lattice_sample.cpu().numpy()
+    return ds.to_tag_vec(lattice_sample[:, :, 2], vocab)
+
+
+def to_tokens(tokens, token_mask):
+    token_sample = tokens[:, :, 0, 0][token_mask]
+    token_sample = token_sample.cpu().numpy()
+    return ds.to_token_vec(token_sample, vocab)
+
+
+def print_label_metrics(samples):
+    pred_labels = [tag for sample in samples for tags in sample[0] for tag in tags]
+    gold_labels = [tag for sample in samples for tags in sample[1] for tag in tags]
+    labels = set(pred_labels + gold_labels)
+    labels.discard('<PAD>')
+    print(classification_report(gold_labels, pred_labels, labels=list(labels)))
+    # print(confusion_matrix(gold_tags, pred_tags))
+    # precision, recall, fscore, support = precision_recall_fscore_support(gold_tags, pred_tags)
 
 
 def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_forcing=None):
     total_loss, print_loss = 0, 0
+    total_tags, print_tags = [], []
     for i, batch in enumerate(data):
         batch = tuple(t.to(device) for t in batch)
         b_tokens = batch[0]
@@ -156,6 +188,7 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
         b_lattice_mask = torch.lt(b_lattice_mask_index, b_analysis_lengths.unsqueeze(dim=2))
         for idx in b_is_gold.nonzero():
             b_gold_indices[idx[0], idx[1]] = idx[2]
+        # to_lattice_data(b_tokens, b_token_mask, b_lattice, b_gold_indices)
         teach = optimizer is not None and (teacher_forcing is None or random.uniform(0, 1) < teacher_forcing)
         if teach:
             b_scores = model(b_lattice, b_lattice_mask, b_tokens, b_token_lengths, b_gold_indices)
@@ -165,17 +198,25 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
         b_loss = model.loss(b_scores, b_gold_indices, b_token_mask)
         print_loss += b_loss
         total_loss += b_loss
+        b_pred_indices = model.decode(b_scores)
+        b_pred_tags = to_tags(b_token_mask, b_lattice, b_pred_indices)
+        b_gold_tags = to_tags(b_token_mask, b_lattice, b_gold_indices)
+        print_tags.append((b_gold_tags, b_pred_tags))
+        total_tags.append((b_gold_tags, b_pred_tags))
         if optimizer is not None:
             optimizer.step(b_loss)
         if (i + 1) % print_every == 0:
             print(f'epoch {epoch}, {phase} step {i + 1}, loss: {print_loss / print_every}')
-            b_pred_indices = model.decode(b_scores)
-            sample = to_sample(b_tokens, b_token_mask, b_lattice, b_gold_indices, b_pred_indices)
-            print_sample(sample)
+            print_label_metrics(print_tags)
+            # sample = to_sample(b_tokens, b_token_mask, b_lattice, b_gold_indices, b_pred_indices)
+            b_gold_tokens = to_tokens(b_tokens, b_token_mask)
+            print_sample()
             print_loss = 0
+            print_tags = []
     if optimizer is not None:
         optimizer.force_step()
     print(f'epoch {epoch}, {phase} total loss: {total_loss / len(data)}')
+    print_label_metrics(total_tags)
 
 
 lr = 1e-3

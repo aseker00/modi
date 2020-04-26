@@ -132,7 +132,7 @@ class Seq2SeqClassifier(nn.Module):
     def forward(self, inputs, input_lengths, gold_labels=None):
         embed_inputs = self.enc_emb(inputs, input_lengths)
         dec_hidden_state = self.forward_encode(embed_inputs)
-        scores = self.get_label_seq_scores(dec_hidden_state, input_lengths[:, 0, 0], embed_inputs, gold_labels)
+        scores = self.get_input_seq_scores(dec_hidden_state, input_lengths[:, 0, 0], embed_inputs, gold_labels)
         return torch.stack(scores, dim=1)
 
     def forward_encode(self, embed_inputs):
@@ -157,8 +157,8 @@ class Seq2SeqClassifier(nn.Module):
         input_indices = np.zeros(batch_size, dtype=np.int)
         label_indices = np.zeros(batch_size, dtype=np.int)
         # Stop when all current token indices have reached their input token lengths
-        while np.any(np.less(input_indices, input_lengths[:, 0, 0].numpy())):
-        # while np.any(np.less(input_indices, input_lengths.numpy())):
+        # while np.any(np.less(input_indices, input_lengths[:, 0, 0].numpy())):
+        while np.any(np.less(input_indices, input_lengths.cpu().numpy())):
             embed_label = self.dec_emb(pred_label)
             # If embed inputs are available use the current token along with the previous label
             if embed_inputs is not None:
@@ -173,12 +173,12 @@ class Seq2SeqClassifier(nn.Module):
                 pred_label = self.decode(dec_scores)
             # All labels beyond token lengths get <PAD> (this is only relevant for batch_size > 1, where one sentence
             # may be done, but other sentences haven't reached their token lengths)
-            pred_label[:, input_indices == input_lengths.numpy()] = 0
+            pred_label[:, input_indices == input_lengths.cpu().numpy()] = 0
             # Get <EOT> mask, which is used as an indicator to increment token indices
             # TODO: I think there's a bug here because if not using gold_labels for next pred_label it might be that
             # TODO: the <EOT> is not present but we've reached max_label_seq_len so we need increment input index
             # TODO: in this case
-            pred_label_mask = (pred_label.squeeze(dim=1) == self.eot).numpy()
+            pred_label_mask = (pred_label.squeeze(dim=1) == self.eot).cpu().numpy()
             # TODO: So I think the label indices should be checked for max label seq before incrementing input indices
             pred_label_mask |= label_indices == self.max_label_seq_len - 1
             input_indices += pred_label_mask

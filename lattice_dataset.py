@@ -82,6 +82,38 @@ def load_inf_samples(root_path, partition, morph_level):
     return load_data_samples(root_path / morph_level, partition, 'lattices-inf', get_inf_lattice_seq_samples)
 
 
+def sample_to_data(token_ids, lattice_sample, vocab):
+    column_names = ['from_node_id', 'to_node_id', 'form', 'lemma', 'tag', 'feats', 'token_id', 'token', 'analysis_id', 'morpheme_id']
+    analysis_indices = lattice_sample[:, :, 0].nonzero()
+    token_indices = analysis_indices[0]
+    morpheme_indices = analysis_indices[1]
+    form_ids = lattice_sample[:, :, 0]
+    lemma_ids = lattice_sample[:, :, 1]
+    tag_ids = lattice_sample[:, :, 2]
+    feat_ids = lattice_sample[:, :, 3:]
+    # Remove <PAD>s and transform into vocab values
+    mask = form_ids != 0
+    tokens = to_token_vec(token_ids, vocab)
+    forms = to_form_vec(form_ids[mask], vocab)
+    lemmas = to_lemma_vec(lemma_ids[mask], vocab)
+    tags = to_tag_vec(tag_ids[mask], vocab)
+    feats_str = feats_to_str(to_feat_vec(feat_ids[mask], vocab))
+    rows = []
+    for i in range(len(forms)):
+        from_node_id = i
+        to_node_id = i + 1
+        form = forms[i]
+        lemma = lemmas[i]
+        tag = tags[i]
+        feats = feats_str[i]
+        token_idx = token_indices[i]
+        token = tokens[token_idx]
+        morpheme_idx = morpheme_indices[i]
+        row = [from_node_id, to_node_id, form, lemma, tag, feats, token_idx, token, 0, morpheme_idx]
+        rows.append(row)
+    return pd.DataFrame(rows, columns=column_names)
+
+
 def main():
     # partition = ['dev', 'test', 'train']
     partition = ['dev']

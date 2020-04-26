@@ -5,7 +5,6 @@ from torch.utils.data.dataset import TensorDataset
 import seqtag_dataset as ds
 from seqtag_models import *
 from pathlib import Path
-import numpy as np
 
 
 root_path = Path.home() / 'dev/aseker00/modi/treebank/spmrl/heb/seqtag'
@@ -25,9 +24,10 @@ if dev_set_path.exists() and test_set_path.exists() and train_set_path.exists():
 else:
     partition = ['dev', 'test', 'train']
     token_samples, morph_samples, vocab = ds.load_samples(root_path, partition, seq_type, 'var')
+    token_lengths = {t: torch.tensor(token_samples[t][1], dtype=torch.long, requires_grad=False)
+                     for t in token_samples}
     token_samples = {t: torch.tensor(token_samples[t][0], dtype=torch.long) for t in token_samples}
     morph_samples = {t: torch.tensor(morph_samples[t], dtype=torch.long) for t in morph_samples}
-    token_lengths = {t: torch.tensor(token_samples[t][1], dtype=torch.long, requires_grad=False) for t in token_samples}
     dev_set = TensorDataset(token_samples['dev'], token_lengths['dev'], morph_samples['dev'])
     test_set = TensorDataset(token_samples['test'], token_lengths['test'], morph_samples['test'])
     train_set = TensorDataset(token_samples['train'], token_lengths['train'], morph_samples['train'])
@@ -42,6 +42,8 @@ else:
     torch.save(char_ft_emb, str(char_ft_emb_path))
     torch.save(token_ft_emb, str(token_ft_emb_path))
 train_data = DataLoader(train_set, batch_size=1, shuffle=True)
+dev_data = DataLoader(dev_set, batch_size=1)
+test_data = DataLoader(test_set, batch_size=1)
 
 device = None
 num_tags = len(vocab['tags'])
@@ -85,6 +87,6 @@ for epoch in range(3):
             gold_sample = b_tags[-1, b_token_mask[-1], :]
             pred_sample = b_pred[-1, :, :]
             token_sample = b_tokens[-1, b_token_mask[-1], 0, 0]
-            print(to_token_vec(token_sample.numpy()))
-            print(to_tag_vec(pred_sample.numpy()))
-            print(to_tag_vec(gold_sample.numpy()))
+            print(f'tokens: {to_token_vec(token_sample.cpu().numpy())}')
+            print(f'gold: {to_tag_vec(gold_sample.cpu().numpy())}')
+            print(f'pred: {to_tag_vec(pred_sample.cpu().numpy())}')

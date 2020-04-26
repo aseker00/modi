@@ -157,3 +157,31 @@ def load_data_samples(root_path, partition, tag_type, morph_seq_func):
     token_samples = {t: get_token_seq_samples(dataset[t], vocab, token_column_names) for t in dataset}
     morph_samples = {t: morph_seq_func(dataset[t], vocab, max_morphemes[partition[-1]]) for t in dataset}
     return token_samples, morph_samples, vocab
+
+
+to_form_vec = np.vectorize(lambda x, vocab: vocab['forms'][x])
+to_lemma_vec = np.vectorize(lambda x, vocab: vocab['lemmas'][x])
+to_tag_vec = np.vectorize(lambda x, vocab: vocab['tags'][x])
+to_feat_vec = np.vectorize(lambda x, vocab: vocab['feats'][x])
+to_token_vec = np.vectorize(lambda x, vocab: vocab['tokens'][x])
+
+
+def feats_to_str(feats):
+    ordered_feat_keys = ['gen', 'num', 'per', 'tense', 'suf_gen', 'suf_num', 'suf_per']
+    res = []
+    feats_maps = [{kv[0]: kv[1] for kv in [f.split('=') for f in vec if f != '_']} for vec in feats]
+    for m in feats_maps:
+        if not m:
+            res.append('_')
+        else:
+            s = []
+            for k in ordered_feat_keys:
+                if k in m:
+                    if k == 'tense':
+                        v = m[k]
+                        s.append(f'{k}={v}')
+                    else:
+                        for v in m[k]:
+                            s.append(f'{k}={v}')
+            res.append('|'.join(s))
+    return res

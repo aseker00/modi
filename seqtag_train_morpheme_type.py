@@ -86,5 +86,5 @@ for epoch in range(3):
             pred_sample = b_pred[-1, :, :]
             token_sample = b_tokens[-1, b_token_mask[-1], 0, 0]
             print(f'tokens: {to_token_vec(token_sample.cpu().numpy())}')
-            print(f'gold: {to_tag_vec(pred_sample.cpu().numpy())}')
-            print(f'pred: {to_tag_vec(gold_sample.cpu().numpy())}')
+            print(f'gold: {to_tag_vec(gold_sample.cpu().numpy())}')
+            print(f'pred: {to_tag_vec(pred_sample.cpu().numpy())}')
