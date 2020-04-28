@@ -107,21 +107,20 @@ def pack_lattice(lattice, mask, indices):
     return torch.gather(lattice[mask], 1, index).squeeze(1)
 
 
-def to_tags_arr(lattice, token_mask, analysis_indices):
-    lattice_sample = pack_lattice(lattice, token_mask, analysis_indices)
-    lattice_sample = lattice_sample.cpu().numpy()
-    return ds.to_tag_vec(lattice_sample[:, :, 2], vocab)
+def to_tags_arr(lattice_ids, token_mask, analysis_indices):
+    masked_token_lattice_ids = pack_lattice(lattice_ids, token_mask, analysis_indices)
+    masked_token_lattice_ids = masked_token_lattice_ids.cpu().numpy()
+    return ds.to_tag_vec(masked_token_lattice_ids[:, :, 2], vocab)
 
 
-def to_tokens_arr(tokens, token_mask):
-    token_sample = tokens[:, :, 0, 0][token_mask]
-    token_sample = token_sample.cpu().numpy()
-    return ds.to_token_vec(token_sample, vocab)
+def to_tokens_arr(token_ids, token_mask):
+    masked_token_ids = token_ids[:, :, 0, 0][token_mask]
+    return ds.to_token_vec(masked_token_ids.cpu().numpy(), vocab)
 
 
 def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_forcing=None):
     total_loss, print_loss = 0, 0
-    total_labels, print_labels = [], []
+    total_samples, print_samples = [], []
     for i, batch in enumerate(data):
         batch = tuple(t.to(device) for t in batch)
         b_tokens = batch[0]
@@ -155,20 +154,20 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
         gold_tokens_arr = to_tokens_arr(b_tokens, b_token_mask)
         gold_labels_arr = to_tags_arr(b_lattice, b_token_mask, b_gold_indices)
         pred_labels_arr = to_tags_arr(b_lattice, b_token_mask, b_pred_indices)
-        print_labels.append((gold_tokens_arr, gold_labels_arr, pred_labels_arr))
-        total_labels.append((gold_tokens_arr, gold_labels_arr, pred_labels_arr))
+        print_samples.append((gold_tokens_arr, gold_labels_arr, pred_labels_arr))
+        total_samples.append((gold_tokens_arr, gold_labels_arr, pred_labels_arr))
         if optimizer is not None:
             optimizer.step([b_loss])
         if (i + 1) % print_every == 0:
             print(f'epoch {epoch}, {phase} step {i + 1}, loss: {print_loss / print_every}')
-            print_label_metrics(print_labels, ['<PAD>'])
-            print_sample_labels(print_labels[-1])
+            print_label_metrics(print_samples, ['<PAD>'])
+            print_sample_labels(print_samples[-1])
             print_loss = 0
-            print_labels = []
+            print_samples = []
     if optimizer is not None:
         optimizer.force_step()
     print(f'epoch {epoch}, {phase} total loss: {total_loss / len(data)}')
-    print_label_metrics(total_labels, ['<PAD>'])
+    print_label_metrics(total_samples, ['<PAD>'])
 
 
 lr = 1e-3

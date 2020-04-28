@@ -69,21 +69,19 @@ def to_lattice_data(tokens, token_mask, morphemes, tags):
     pass
 
 
-def to_tags_arr(tags, token_mask):
-    tags_sample = tags[token_mask]
-    tags_sample = tags_sample.cpu().numpy()
-    return ds.to_tag_vec(tags_sample, vocab)
+def to_tags_arr(tag_ids, token_mask):
+    masked_token_tag_ids = tag_ids[token_mask]
+    return ds.to_tag_vec(masked_token_tag_ids.cpu().numpy(), vocab)
 
 
-def to_tokens_arr(tokens, token_mask):
-    token_sample = tokens[:, :, 0, 0][token_mask]
-    token_sample = token_sample.cpu().numpy()
-    return ds.to_token_vec(token_sample, vocab)
+def to_tokens_arr(token_ids, token_mask):
+    masked_token_ids = token_ids[:, :, 0, 0][token_mask]
+    return ds.to_token_vec(masked_token_ids.cpu().numpy(), vocab)
 
 
 def run_data(epoch, phase, data, print_every, model, optimizer=None):
     total_loss, print_loss = 0, 0
-    total_labels, print_labels = [], []
+    total_samples, print_samples = [], []
     for i, batch in enumerate(data):
         batch = tuple(t.to(device) for t in batch)
         b_tokens = batch[0]
@@ -101,20 +99,20 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
         gold_tokens_arr = to_tokens_arr(b_tokens, b_token_mask)
         gold_labels_arr = to_tags_arr(b_gold_tags, b_token_mask)
         pred_labels_arr = to_tags_arr(b_pred_tags, b_token_mask)
-        print_labels.append((gold_tokens_arr, gold_labels_arr, pred_labels_arr))
-        total_labels.append((gold_tokens_arr, gold_labels_arr, pred_labels_arr))
+        print_samples.append((gold_tokens_arr, gold_labels_arr, pred_labels_arr))
+        total_samples.append((gold_tokens_arr, gold_labels_arr, pred_labels_arr))
         if optimizer is not None:
             optimizer.step([b_loss])
         if (i + 1) % print_every == 0:
             print(f'epoch {epoch}, {phase} step {i + 1}, loss: {print_loss / print_every}')
-            print_label_metrics(print_labels, ['<PAD>', '<EOT>'])
-            print_sample_labels(print_labels[-1])
+            print_label_metrics(print_samples, ['<PAD>', '<EOT>'])
+            print_sample_labels(print_samples[-1])
             print_loss = 0
-            print_labels = []
+            print_samples = []
     if optimizer is not None:
         optimizer.force_step()
     print(f'epoch {epoch}, {phase} total loss: {total_loss / len(data)}')
-    print_label_metrics(total_labels, ['<PAD>', '<EOT>'])
+    print_label_metrics(total_samples, ['<PAD>', '<EOT>'])
 
 
 # torch.autograd.set_detect_anomaly(True)

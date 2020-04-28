@@ -2,7 +2,7 @@ from torch.optim.adamw import AdamW
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import TensorDataset
 from tqdm import trange
-
+import numpy as np
 from utils import *
 import seqtag_dataset as ds
 from seqtag_models import *
@@ -65,21 +65,53 @@ def to_lattice_data(tokens, token_mask, morphemes, tags):
     pass
 
 
-def to_tags_arr(tags, token_mask):
-    tags_sample = tags[token_mask]
-    tags_sample = tags_sample.cpu().numpy()
-    return ds.to_tag_vec(tags_sample, vocab)
+split_multi_tags = np.vectorize(lambda x: len(x.split('-')))
 
 
-def to_tokens_arr(tokens, token_mask):
-    token_sample = tokens[:, :, 0, 0][token_mask]
-    token_sample = token_sample.cpu().numpy()
-    return ds.to_token_vec(token_sample, vocab)
+def to_tags_arr(tag_ids, token_mask):
+    token_tag_ids = tag_ids[token_mask]
+    token_tag_ids_mask_idx = (token_tag_ids != vocab['tag2id']['_']).nonzero()
+    token_indices, tag_counts = token_tag_ids_mask_idx[:, 0].unique_consecutive(dim=0, return_counts=True)
+    multi_tags = torch.zeros_like(token_tag_ids)
+    mask_idx = 0
+    for token_idx, num_tags in zip(token_indices, tag_counts):
+        for tag_idx in range(num_tags):
+            tag_id = token_tag_ids[token_idx, token_tag_ids_mask_idx[mask_idx, 1]]
+            multi_tags[token_idx, tag_idx] = tag_id
+            mask_idx += 1
+    multi_tags = ds.to_tag_vec(multi_tags.cpu().numpy(), vocab)
+    num_tags = split_multi_tags(multi_tags).sum(axis=1)
+    tags = np.full((multi_tags.shape[0], np.max(num_tags)), fill_value=vocab['tags'][0], dtype=multi_tags.dtype)
+    for token_idx in range(multi_tags.shape[0]):
+        tag_idx = 0
+        for multi_tag_idx in range(multi_tags.shape[1]):
+            multi_tag = multi_tags[token_idx, multi_tag_idx]
+            for tag in multi_tag.split('-'):
+                tags[token_idx, tag_idx] = tag
+                tag_idx += 1
+    return tags
+
+
+def to_tokens_arr(token_ids, token_mask):
+    tokens = token_ids[:, :, 0, 0][token_mask]
+    tokens = tokens.cpu().numpy()
+    return ds.to_token_vec(tokens, vocab)
+
+
+def get_fixed_samples(samples):
+    fixed_seq_len = max([sample[1].shape[1] for sample in samples] + [sample[2].shape[1] for sample in samples])
+    return [get_fixed_sample(sample, fixed_seq_len) for sample in samples]
+
+
+def get_fixed_sample(sample, max_seq_len):
+    fixed_gold_labels = np.pad(sample[1], ((0, 0), (0, max_seq_len - sample[1].shape[1])), mode='edge')
+    fixed_pred_labels = np.pad(sample[2], ((0, 0), (0, max_seq_len - sample[2].shape[1])), mode='edge')
+    return sample[0], fixed_gold_labels, fixed_pred_labels
 
 
 def run_data(epoch, phase, data, print_every, model, optimizer=None):
     total_loss, print_loss = 0, 0
-    total_labels, print_labels = [], []
+    total_samples, print_samples = [], []
     for i, batch in enumerate(data):
         batch = tuple(t.to(device) for t in batch)
         b_tokens = batch[0]
@@ -96,20 +128,22 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
         gold_tokens_arr = to_tokens_arr(b_tokens, b_token_mask)
         gold_labels_arr = to_tags_arr(b_gold_tags, b_token_mask)
         pred_labels_arr = to_tags_arr(b_pred_tags, b_token_mask)
-        print_labels.append((gold_tokens_arr, gold_labels_arr, pred_labels_arr))
-        total_labels.append((gold_tokens_arr, gold_labels_arr, pred_labels_arr))
+        print_samples.append((gold_tokens_arr, gold_labels_arr, pred_labels_arr))
+        total_samples.append((gold_tokens_arr, gold_labels_arr, pred_labels_arr))
         if optimizer is not None:
             optimizer.step(b_losses)
         if (i + 1) % print_every == 0:
             print(f'epoch {epoch}, {phase} step {i + 1}, loss: {print_loss / print_every}')
-            print_label_metrics(print_labels, ['_'])
-            print_sample_labels(print_labels[-1])
+            fixed_samples = get_fixed_samples(print_samples)
+            print_label_metrics(fixed_samples, ['<PAD>'])
+            print_sample_labels(fixed_samples[-1])
             print_loss = 0
-            print_labels = []
+            print_samples = []
     if optimizer is not None:
         optimizer.force_step()
     print(f'epoch {epoch}, {phase} total loss: {total_loss / len(data)}')
-    print_label_metrics(total_labels, ['_'])
+    fixed_samples = get_fixed_samples(total_samples)
+    print_label_metrics(fixed_samples, ['<PAD>'])
 
 
 # torch.autograd.set_detect_anomaly(True)
