@@ -112,8 +112,8 @@ def tags_to_lattice_data(token_ids, token_tag_ids, vocab):
     token_tag_ids[token_tag_ids == vocab['tag2id']['<EOT>']] = vocab['tag2id']['<PAD>']
     token_tag_mask = token_tag_ids != vocab['tag2id']['<PAD>']
     token_tag_mask_indices = token_tag_mask.nonzero()
-    token_tag_indices = token_tag_mask_indices[:, 0]
-    morpheme_indices = token_tag_mask_indices[:, 1]
+    token_tag_indices = token_tag_mask_indices[0]
+    morpheme_indices = token_tag_mask_indices[1]
     tag_ids = token_tag_ids[token_tag_indices, morpheme_indices]
     form_ids = np.full_like(tag_ids, fill_value=vocab['form2id']['_'])
     lemma_ids = np.full_like(tag_ids, fill_value=vocab['lemma2id']['_'])
@@ -124,11 +124,11 @@ def tags_to_lattice_data(token_ids, token_tag_ids, vocab):
     tags = to_tag_vec(tag_ids, vocab)
     feats = to_feat_vec(feats_ids, vocab)
     rows = []
-    for i, token_tag_idx in enumerate(token_tag_mask_indices):
+    for i, token_tag_idx in enumerate(zip(token_tag_mask_indices[0], token_tag_mask_indices[1])):
         from_node_id = i
         to_node_id = i + 1
-        token_idx = token_tag_idx[0].item()
-        morpheme_idx = token_tag_idx[1].item()
+        token_idx = token_tag_idx[0]
+        morpheme_idx = token_tag_idx[1]
         token = tokens[token_idx]
         form = forms[i]
         lemma = lemmas[i]

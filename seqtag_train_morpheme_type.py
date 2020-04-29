@@ -58,17 +58,19 @@ if device is not None:
 print(tagger)
 
 
-def to_lattice_data(tokens, token_mask, morphemes, tags):
-    # token_sample = tokens[:, :, 0, 0][token_mask]
-    # lattice_sample = pack_lattice(lattice, token_mask, analysis_indices)
-    # return ds.lattice_to_data(token_sample.cpu().numpy(), lattice_sample.cpu().numpy(), vocab)
-    pass
+to_tag_id_vec = np.vectorize(lambda x, vocab: vocab['tag2id'][x])
+
+
+def to_lattice_data(token_ids, token_mask, tag_ids):
+    tokens = token_ids[:, :, 0, 0][token_mask]
+    tags = to_tags_arr(tag_ids, token_mask)
+    return ds.tags_to_lattice_data(tokens.cpu().numpy(), to_tag_id_vec(tags, vocab), vocab)
 
 
 split_multi_tags = np.vectorize(lambda x: len(x.split('-')))
 
 
-def to_tags_arr(tag_ids, token_mask, vocab):
+def to_tags_arr(tag_ids, token_mask):
     token_tag_ids = tag_ids[token_mask]
     token_tag_ids_mask_idx = (token_tag_ids != vocab['tag2id']['_']).nonzero()
     token_indices, tag_counts = token_tag_ids_mask_idx[:, 0].unique_consecutive(dim=0, return_counts=True)
@@ -113,6 +115,7 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
         b_morphemes = batch[2]
         b_gold_tags = b_morphemes[:, :, :, 2]
         b_token_mask = b_tokens[:, :, 0, 0] != 0
+        to_lattice_data(b_tokens, b_token_mask, b_gold_tags)
         # [b_max_tokens, b_max_chars] = b_token_lengths[:, :].max(dim=1)[0][0].tolist()
         b_scores = model(b_tokens, b_token_lengths)
         b_losses = model.loss(b_scores, b_gold_tags, b_token_mask)
@@ -120,8 +123,8 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
         total_loss += sum(b_losses)
         b_pred_tags = model.decode(b_scores)
         gold_tokens_arr = to_tokens_arr(b_tokens, b_token_mask, vocab)
-        gold_labels_arr = to_tags_arr(b_gold_tags, b_token_mask, vocab)
-        pred_labels_arr = to_tags_arr(b_pred_tags, b_token_mask, vocab)
+        gold_labels_arr = to_tags_arr(b_gold_tags, b_token_mask)
+        pred_labels_arr = to_tags_arr(b_pred_tags, b_token_mask)
         print_samples.append((gold_tokens_arr, gold_labels_arr, pred_labels_arr))
         total_samples.append((gold_tokens_arr, gold_labels_arr, pred_labels_arr))
         if optimizer is not None:
