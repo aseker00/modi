@@ -82,15 +82,15 @@ if device is not None:
 print(ptrnet)
 
 
-def to_lattice_data(tokens, token_mask, lattice, analysis_indices):
-    token_sample = tokens[:, :, 0, 0][token_mask]
-    lattice_sample = pack_lattice(lattice, token_mask, analysis_indices)
-    return ds.lattice_to_data(token_sample.cpu().numpy(), lattice_sample.cpu().numpy(), vocab)
+def to_lattice_data(token_ids, token_mask, lattice_ids, analysis_indices):
+    tokens = token_ids[:, :, 0, 0][token_mask]
+    lattice = pack_lattice(lattice_ids, token_mask, analysis_indices)
+    return ds.lattice_to_data(tokens.cpu().numpy(), lattice.cpu().numpy(), vocab)
 
 
-def pack_lattice(lattice, mask, indices):
-    morpheme_size = lattice.shape[-1]
-    analysis_size = lattice.shape[-2]
+def pack_lattice(lattice_ids, mask, indices):
+    morpheme_size = lattice_ids.shape[-1]
+    analysis_size = lattice_ids.shape[-2]
     # TODO: Remove condition once the pred_indices and gold_indices have the same shape [batch_size, token_seq_size]
     if indices.shape == mask.shape:
         # Gold indices (shape is [batch_size, token_seq_size], so needs to be masked)
@@ -104,18 +104,13 @@ def pack_lattice(lattice, mask, indices):
     # a - analysis seq len
     # m - morphemes per analysis
     # 10 - morpheme size (form, lemma, tag, 7 features)
-    return torch.gather(lattice[mask], 1, index).squeeze(1)
+    return torch.gather(lattice_ids[mask], 1, index).squeeze(1)
 
 
-def to_tags_arr(lattice_ids, token_mask, analysis_indices):
+def to_tags_arr(lattice_ids, token_mask, analysis_indices, vocab):
     masked_token_lattice_ids = pack_lattice(lattice_ids, token_mask, analysis_indices)
     masked_token_lattice_ids = masked_token_lattice_ids.cpu().numpy()
     return ds.to_tag_vec(masked_token_lattice_ids[:, :, 2], vocab)
-
-
-def to_tokens_arr(token_ids, token_mask):
-    masked_token_ids = token_ids[:, :, 0, 0][token_mask]
-    return ds.to_token_vec(masked_token_ids.cpu().numpy(), vocab)
 
 
 def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_forcing=None):
@@ -151,9 +146,9 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
         print_loss += b_loss
         total_loss += b_loss
         b_pred_indices = model.decode(b_scores)
-        gold_tokens_arr = to_tokens_arr(b_tokens, b_token_mask)
-        gold_labels_arr = to_tags_arr(b_lattice, b_token_mask, b_gold_indices)
-        pred_labels_arr = to_tags_arr(b_lattice, b_token_mask, b_pred_indices)
+        gold_tokens_arr = to_tokens_arr(b_tokens, b_token_mask, vocab)
+        gold_labels_arr = to_tags_arr(b_lattice, b_token_mask, b_gold_indices, vocab)
+        pred_labels_arr = to_tags_arr(b_lattice, b_token_mask, b_pred_indices, vocab)
         print_samples.append((gold_tokens_arr, gold_labels_arr, pred_labels_arr))
         total_samples.append((gold_tokens_arr, gold_labels_arr, pred_labels_arr))
         if optimizer is not None:

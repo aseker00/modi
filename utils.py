@@ -2,6 +2,7 @@ from sklearn.metrics import classification_report
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import dataset as ds
 
 
 def batch_narrow(tokens, chars, char_lengths, token_lengths, labels):
@@ -151,3 +152,8 @@ def print_label_metrics(samples, remove_labels):
     print(classification_report(gold_labels, pred_labels, labels=list(labels)))
     # print(confusion_matrix(gold_tags, pred_tags))
     # precision, recall, fscore, support = precision_recall_fscore_support(gold_tags, pred_tags)
+
+
+def to_tokens_arr(token_ids, token_mask, vocab):
+    tokens = token_ids[:, :, 0, 0][token_mask]
+    return ds.to_token_vec(tokens.cpu().numpy(), vocab)

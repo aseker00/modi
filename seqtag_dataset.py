@@ -106,6 +106,48 @@ def load_samples(root_path, partition, morph_level, seq_type):
             return load_data_samples(root_path / morph_level, partition, 'gold-lattices-multi', get_var_arr)
 
 
+def tags_to_lattice_data(token_ids, token_tag_ids, vocab):
+    column_names = ['from_node_id', 'to_node_id', 'form', 'lemma', 'tag', 'feats', 'token_id', 'token', 'analysis_id',
+                    'morpheme_id']
+    token_tag_ids[token_tag_ids == vocab['tag2id']['<EOT>']] = vocab['tag2id']['<PAD>']
+    token_tag_mask = token_tag_ids != vocab['tag2id']['<PAD>']
+    token_tag_mask_indices = token_tag_mask.nonzero()
+    token_tag_indices = token_tag_mask_indices[:, 0]
+    morpheme_indices = token_tag_mask_indices[:, 1]
+    tag_ids = token_tag_ids[token_tag_indices, morpheme_indices]
+    form_ids = np.full_like(tag_ids, fill_value=vocab['form2id']['_'])
+    lemma_ids = np.full_like(tag_ids, fill_value=vocab['lemma2id']['_'])
+    feats_ids = np.full_like(tag_ids, fill_value=vocab['feats2id']['_'])
+    tokens = to_token_vec(token_ids, vocab)
+    forms = to_form_vec(form_ids, vocab)
+    lemmas = to_lemma_vec(lemma_ids, vocab)
+    tags = to_tag_vec(tag_ids, vocab)
+    feats = to_feat_vec(feats_ids, vocab)
+    rows = []
+    for i, token_tag_idx in enumerate(token_tag_mask_indices):
+        from_node_id = i
+        to_node_id = i + 1
+        token_idx = token_tag_idx[0].item()
+        morpheme_idx = token_tag_idx[1].item()
+        token = tokens[token_idx]
+        form = forms[i]
+        lemma = lemmas[i]
+        tag = tags[i]
+        feat = feats[i]
+        row = [from_node_id, to_node_id, form, lemma, tag, feat, token_idx, token, 0, morpheme_idx]
+        rows.append(row)
+    return pd.DataFrame(rows, columns=column_names)
+
+
+def lattice_to_tags_arr(df):
+    values = [x[1].tag.values for x in df.groupby('token_id')]
+    max_len = max([len(a) for a in values])
+    tags_arr = np.full_like(df.tag.values, shape=(len(values), max_len), fill_value='<PAD>')
+    for i, a in enumerate(values):
+        tags_arr[i, :len(a)] = a
+    return tags_arr
+
+
 def main():
     partition = ['dev', 'test', 'train']
     root_path = Path.home() / 'dev/aseker00/modi/treebank/spmrl/heb/seqtag'

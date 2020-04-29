@@ -62,21 +62,16 @@ if device is not None:
 print(s2s)
 
 
-def to_lattice_data(tokens, token_mask, morphemes, tags):
-    # token_sample = tokens[:, :, 0, 0][token_mask]
-    # lattice_sample = pack_lattice(lattice, token_mask, analysis_indices)
-    # return ds.lattice_to_data(token_sample.cpu().numpy(), lattice_sample.cpu().numpy(), vocab)
-    pass
+def to_lattice_data(token_ids, token_mask, tag_ids):
+    tokens = token_ids[:, :, 0, 0][token_mask]
+    tags = tag_ids[token_mask]
+    return ds.tags_to_lattice_data(tokens.cpu().numpy(), tags.cpu().numpy(), vocab)
 
 
-def to_tags_arr(tag_ids, token_mask):
-    masked_token_tag_ids = tag_ids[token_mask]
-    return ds.to_tag_vec(masked_token_tag_ids.cpu().numpy(), vocab)
-
-
-def to_tokens_arr(token_ids, token_mask):
-    masked_token_ids = token_ids[:, :, 0, 0][token_mask]
-    return ds.to_token_vec(masked_token_ids.cpu().numpy(), vocab)
+def to_tags_arr(tag_ids, token_mask, vocab):
+    token_tag_ids = tag_ids[token_mask]
+    token_tag_ids[token_tag_ids == vocab['tag2id']['<EOT>']] = vocab['tag2id']['<PAD>']
+    return ds.to_tag_vec(token_tag_ids.cpu().numpy(), vocab)
 
 
 def run_data(epoch, phase, data, print_every, model, optimizer=None):
@@ -90,29 +85,30 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
         b_gold_tags = b_morphemes[:, :, :, 2]
         b_token_mask = b_tokens[:, :, 0, 0] != 0
         b_tags_mask = b_gold_tags != 0
+        # to_lattice_data(b_tokens, b_token_mask, b_gold_tags)
         # [b_max_tokens, b_max_chars] = b_token_lengths[:, :].max(dim=1)[0][0].tolist()
         b_scores = model(b_tokens, b_token_lengths, b_gold_tags)
         b_loss = model.loss(b_scores, b_gold_tags, b_tags_mask)
         print_loss += b_loss
         total_loss += b_loss
         b_pred_tags = model.decode(b_scores)
-        gold_tokens_arr = to_tokens_arr(b_tokens, b_token_mask)
-        gold_labels_arr = to_tags_arr(b_gold_tags, b_token_mask)
-        pred_labels_arr = to_tags_arr(b_pred_tags, b_token_mask)
+        gold_tokens_arr = to_tokens_arr(b_tokens, b_token_mask, vocab)
+        gold_labels_arr = to_tags_arr(b_gold_tags, b_token_mask, vocab)
+        pred_labels_arr = to_tags_arr(b_pred_tags, b_token_mask, vocab)
         print_samples.append((gold_tokens_arr, gold_labels_arr, pred_labels_arr))
         total_samples.append((gold_tokens_arr, gold_labels_arr, pred_labels_arr))
         if optimizer is not None:
             optimizer.step([b_loss])
         if (i + 1) % print_every == 0:
             print(f'epoch {epoch}, {phase} step {i + 1}, loss: {print_loss / print_every}')
-            print_label_metrics(print_samples, ['<PAD>', '<EOT>'])
+            print_label_metrics(print_samples, ['<PAD>'])
             print_sample_labels(print_samples[-1])
             print_loss = 0
             print_samples = []
     if optimizer is not None:
         optimizer.force_step()
     print(f'epoch {epoch}, {phase} total loss: {total_loss / len(data)}')
-    print_label_metrics(total_samples, ['<PAD>', '<EOT>'])
+    print_label_metrics(total_samples, ['<PAD>'])
 
 
 # torch.autograd.set_detect_anomaly(True)

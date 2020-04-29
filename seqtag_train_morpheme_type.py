@@ -68,7 +68,7 @@ def to_lattice_data(tokens, token_mask, morphemes, tags):
 split_multi_tags = np.vectorize(lambda x: len(x.split('-')))
 
 
-def to_tags_arr(tag_ids, token_mask):
+def to_tags_arr(tag_ids, token_mask, vocab):
     token_tag_ids = tag_ids[token_mask]
     token_tag_ids_mask_idx = (token_tag_ids != vocab['tag2id']['_']).nonzero()
     token_indices, tag_counts = token_tag_ids_mask_idx[:, 0].unique_consecutive(dim=0, return_counts=True)
@@ -90,12 +90,6 @@ def to_tags_arr(tag_ids, token_mask):
                 tags[token_idx, tag_idx] = tag
                 tag_idx += 1
     return tags
-
-
-def to_tokens_arr(token_ids, token_mask):
-    tokens = token_ids[:, :, 0, 0][token_mask]
-    tokens = tokens.cpu().numpy()
-    return ds.to_token_vec(tokens, vocab)
 
 
 def get_fixed_samples(samples):
@@ -125,9 +119,9 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
         print_loss += sum(b_losses)
         total_loss += sum(b_losses)
         b_pred_tags = model.decode(b_scores)
-        gold_tokens_arr = to_tokens_arr(b_tokens, b_token_mask)
-        gold_labels_arr = to_tags_arr(b_gold_tags, b_token_mask)
-        pred_labels_arr = to_tags_arr(b_pred_tags, b_token_mask)
+        gold_tokens_arr = to_tokens_arr(b_tokens, b_token_mask, vocab)
+        gold_labels_arr = to_tags_arr(b_gold_tags, b_token_mask, vocab)
+        pred_labels_arr = to_tags_arr(b_pred_tags, b_token_mask, vocab)
         print_samples.append((gold_tokens_arr, gold_labels_arr, pred_labels_arr))
         total_samples.append((gold_tokens_arr, gold_labels_arr, pred_labels_arr))
         if optimizer is not None:

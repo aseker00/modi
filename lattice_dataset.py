@@ -82,15 +82,16 @@ def load_inf_lattices(root_path, partition, morph_level):
     return load_data_samples(root_path / morph_level, partition, 'lattices-inf', get_inf_lattices_arr)
 
 
-def lattice_to_data(token_ids, lattice, vocab):
-    column_names = ['from_node_id', 'to_node_id', 'form', 'lemma', 'tag', 'feats', 'token_id', 'token', 'analysis_id', 'morpheme_id']
-    analysis_indices = lattice[:, :, 0].nonzero()
+def lattice_to_data(token_ids, lattice_ids, vocab):
+    column_names = ['from_node_id', 'to_node_id', 'form', 'lemma', 'tag', 'feats', 'token_id', 'token', 'analysis_id',
+                    'morpheme_id']
+    analysis_indices = lattice_ids[:, :, 0].nonzero()
     token_indices = analysis_indices[0]
     morpheme_indices = analysis_indices[1]
-    form_ids = lattice[:, :, 0]
-    lemma_ids = lattice[:, :, 1]
-    tag_ids = lattice[:, :, 2]
-    feat_ids = lattice[:, :, 3:]
+    form_ids = lattice_ids[:, :, 0]
+    lemma_ids = lattice_ids[:, :, 1]
+    tag_ids = lattice_ids[:, :, 2]
+    feat_ids = lattice_ids[:, :, 3:]
     # Remove <PAD>s and transform into vocab values
     mask = form_ids != 0
     tokens = to_token_vec(token_ids, vocab)
