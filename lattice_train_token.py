@@ -82,10 +82,10 @@ if device is not None:
 print(ptrnet)
 
 
-def to_lattice_data(token_ids, token_mask, lattice_ids, analysis_indices):
-    tokens = token_ids[:, :, 0, 0][token_mask]
-    lattice = pack_lattice(lattice_ids, token_mask, analysis_indices)
-    return ds.lattice_to_data(tokens.cpu().numpy(), lattice.cpu().numpy(), vocab)
+# def to_lattice_data(token_ids, token_mask, lattice_ids, analysis_indices):
+#     tokens = token_ids[:, :, 0, 0][token_mask]
+#     lattice = pack_lattice(lattice_ids, token_mask, analysis_indices)
+#     return ds.lattice_to_data(tokens.cpu().numpy(), lattice.cpu().numpy(), vocab)
 
 
 def pack_lattice(lattice_ids, mask, indices):

@@ -62,10 +62,10 @@ if device is not None:
 print(s2s)
 
 
-def to_lattice_data(token_ids, token_mask, tag_ids):
-    tokens = token_ids[:, :, 0, 0][token_mask]
-    tags = tag_ids[token_mask]
-    return ds.tags_to_lattice_data(tokens.cpu().numpy(), tags.cpu().numpy(), vocab)
+# def to_lattice_data(token_ids, token_mask, tag_ids):
+#     tokens = token_ids[:, :, 0, 0][token_mask]
+#     tags = tag_ids[token_mask]
+#     return ds.tags_to_lattice_data(tokens.cpu().numpy(), tags.cpu().numpy(), vocab)
 
 
 def to_tags_arr(tag_ids, token_mask, vocab):

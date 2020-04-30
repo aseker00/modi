@@ -184,3 +184,16 @@ to_lemma_vec = np.vectorize(lambda x, vocab: vocab['lemmas'][x])
 to_tag_vec = np.vectorize(lambda x, vocab: vocab['tags'][x])
 to_feat_vec = np.vectorize(lambda x, vocab: vocab['feats'][x])
 to_token_vec = np.vectorize(lambda x, vocab: vocab['tokens'][x])
+to_form_id_vec = np.vectorize(lambda x, vocab: vocab['form2id'][x])
+to_lemma_id_vec = np.vectorize(lambda x, vocab: vocab['lemma2id'][x])
+to_tag_id_vec = np.vectorize(lambda x, vocab: vocab['tag2id'][x])
+to_feat_id_vec = np.vectorize(lambda x, vocab: vocab['feat2id'][x])
+to_token_id_vec = np.vectorize(lambda x, vocab: vocab['token2id'][x])
+split_multi_tags = np.vectorize(lambda x: len(x.split('-')))
+
+
+def token_tag_eval(gold: pd.DataFrame, pred: pd.DataFrame):
+    gold_gb = gold.groupby([gold.sent_id, gold.token_id])
+    pred_gb = pred.groupby([pred.sent_id, pred.token_id])
+    for (sent_id, token_id), gold_df in gold_gb:
+        pred_df = pred_gb[sent_id, token_id]

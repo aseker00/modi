@@ -1,7 +1,10 @@
+from collections import Counter
+
 from torch.optim.adamw import AdamW
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import TensorDataset
 from tqdm import trange
+import pandas as pd
 import numpy as np
 from utils import *
 import seqtag_dataset as ds
@@ -58,16 +61,10 @@ if device is not None:
 print(tagger)
 
 
-to_tag_id_vec = np.vectorize(lambda x, vocab: vocab['tag2id'][x])
-
-
-def to_lattice_data(token_ids, token_mask, tag_ids):
-    tokens = token_ids[:, :, 0, 0][token_mask]
-    tags = to_tags_arr(tag_ids, token_mask)
-    return ds.tags_to_lattice_data(tokens.cpu().numpy(), to_tag_id_vec(tags, vocab), vocab)
-
-
-split_multi_tags = np.vectorize(lambda x: len(x.split('-')))
+# def to_lattice_data(token_ids, token_mask, tag_ids):
+#     tokens = token_ids[:, :, 0, 0][token_mask]
+#     tags = to_tags_arr(tag_ids, token_mask)
+#     return ds.tags_to_lattice_data(tokens.cpu().numpy(), ds.to_tag_id_vec(tags, vocab), vocab)
 
 
 def to_tags_arr(tag_ids, token_mask):
@@ -82,13 +79,15 @@ def to_tags_arr(tag_ids, token_mask):
             multi_tags[token_idx, tag_idx] = tag_id
             mask_idx += 1
     multi_tags = ds.to_tag_vec(multi_tags.cpu().numpy(), vocab)
-    num_tags = split_multi_tags(multi_tags).sum(axis=1)
+    num_tags = ds.split_multi_tags(multi_tags).sum(axis=1)
     tags = np.full((multi_tags.shape[0], np.max(num_tags)), fill_value=vocab['tags'][0], dtype=multi_tags.dtype)
     for token_idx in range(multi_tags.shape[0]):
         tag_idx = 0
         for multi_tag_idx in range(multi_tags.shape[1]):
             multi_tag = multi_tags[token_idx, multi_tag_idx]
             for tag in multi_tag.split('-'):
+                if tag_idx == 0 and tag[0] == '<' and tag[-1] == '>':
+                    tag = '_'
                 tags[token_idx, tag_idx] = tag
                 tag_idx += 1
     return tags
@@ -105,6 +104,32 @@ def get_fixed_sample(sample, max_seq_len):
     return sample[0], fixed_gold_labels, fixed_pred_labels
 
 
+def eval_samples(samples):
+    gold_df = [ds.token_tags_to_lattice_data(sample[0], sample[1]) for sample in samples]
+    pred_df = [ds.token_tags_to_lattice_data(sample[1], sample[2]) for sample in samples]
+    for i, (gold, pred) in enumerate(zip(gold_df, pred_df)):
+        gold.insert(0, 'sent_id', i + 1)
+        pred.insert(0, 'sent_id', i + 1)
+    gold_df = pd.concat(gold_df)
+    pred_df = pd.concat(pred_df)
+    gold_gb = gold_df.groupby([gold_df.sent_id, gold_df.token_id])
+    pred_gb = pred_df.groupby([pred_df.sent_id, pred_df.token_id])
+    gold_counts, pred_counts, intersection_counts = 0, 0, 0
+    for (sent_id, token_id), gold in sorted(gold_gb):
+        if (sent_id, token_id) not in pred_gb.groups:
+            raise Exception(f'key {(sent_id, token_id)} missing from prediction dataframe')
+        pred = pred_gb.get_group((sent_id, token_id))
+        gold_count, pred_count = Counter(gold.tag.tolist()), Counter(pred.tag.tolist())
+        intersection_count = gold_count & pred_count
+        gold_counts += sum(gold_count.values())
+        pred_counts += sum(pred_count.values())
+        intersection_counts += sum(intersection_count.values())
+    precision = intersection_counts / pred_counts if pred_counts else 0.0
+    recall = intersection_counts / gold_counts if gold_counts else 0.0
+    f1 = 2.0 * (precision * recall) / (precision + recall) if precision + recall else 0.0
+    return precision, recall, f1
+
+
 def run_data(epoch, phase, data, print_every, model, optimizer=None):
     total_loss, print_loss = 0, 0
     total_samples, print_samples = [], []
@@ -115,7 +140,6 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
         b_morphemes = batch[2]
         b_gold_tags = b_morphemes[:, :, :, 2]
         b_token_mask = b_tokens[:, :, 0, 0] != 0
-        to_lattice_data(b_tokens, b_token_mask, b_gold_tags)
         # [b_max_tokens, b_max_chars] = b_token_lengths[:, :].max(dim=1)[0][0].tolist()
         b_scores = model(b_tokens, b_token_lengths)
         b_losses = model.loss(b_scores, b_gold_tags, b_token_mask)
@@ -133,7 +157,8 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
             print(f'epoch {epoch}, {phase} step {i + 1}, loss: {print_loss / print_every}')
             fixed_samples = get_fixed_samples(print_samples)
             print_label_metrics(fixed_samples, ['<PAD>'])
-            print_sample_labels(fixed_samples[-1])
+            # print_sample_labels(fixed_samples[-1])
+            print(eval_samples(fixed_samples))
             print_loss = 0
             print_samples = []
     if optimizer is not None:
@@ -141,6 +166,7 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
     print(f'epoch {epoch}, {phase} total loss: {total_loss / len(data)}')
     fixed_samples = get_fixed_samples(total_samples)
     print_label_metrics(fixed_samples, ['<PAD>'])
+    print(eval_samples(fixed_samples))
 
 
 # torch.autograd.set_detect_anomaly(True)
@@ -151,7 +177,7 @@ epochs = 3
 for i in trange(epochs, desc="Epoch"):
     epoch = i + 1
     tagger.train()
-    run_data(epoch, 'train', train_data, 320, tagger, adam)
+    run_data(epoch, 'train', train_data, 32, tagger, adam)
     tagger.eval()
     with torch.no_grad():
         run_data(epoch, 'dev', dev_data, 32, tagger)

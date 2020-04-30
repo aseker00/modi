@@ -82,7 +82,7 @@ def load_inf_lattices(root_path, partition, morph_level):
     return load_data_samples(root_path / morph_level, partition, 'lattices-inf', get_inf_lattices_arr)
 
 
-def lattice_to_data(token_ids, lattice_ids, vocab):
+def lattice_ids_to_lattice_data(token_ids, lattice_ids, vocab):
     column_names = ['from_node_id', 'to_node_id', 'form', 'lemma', 'tag', 'feats', 'token_id', 'token', 'analysis_id',
                     'morpheme_id']
     analysis_indices = lattice_ids[:, :, 0].nonzero()
@@ -110,7 +110,7 @@ def lattice_to_data(token_ids, lattice_ids, vocab):
         token_idx = token_indices[i]
         token = tokens[token_idx]
         morpheme_idx = morpheme_indices[i]
-        row = [from_node_id, to_node_id, form, lemma, tag, feats, token_idx, token, 0, morpheme_idx]
+        row = [from_node_id, to_node_id, form, lemma, tag, feats, token_idx + 1, token, 0, morpheme_idx]
         rows.append(row)
     return pd.DataFrame(rows, columns=column_names)
 

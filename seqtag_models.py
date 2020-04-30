@@ -65,8 +65,8 @@ class FixedSequenceClassifier(nn.Module):
         return losses
 
     def decode(self, label_scores):
-        masked_scores = [torch.argmax(scores, dim=2) for scores in label_scores]
-        return torch.stack(masked_scores, dim=2)
+        labels = [torch.argmax(scores, dim=2) for scores in label_scores]
+        return torch.stack(labels, dim=2)
 
 
 class BatchEncoder(nn.Module):
