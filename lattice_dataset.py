@@ -28,7 +28,6 @@ def to_morpheme_row(row, vocab, feat_map, infuse):
     form_id = vocab['form2id'][row.form]
     lemma_id = vocab['lemma2id'][row.lemma]
     tag_id = vocab['tag2id'][row.tag]
-    # feats_id = vocab['feats_str2id'][row.feats]
     feat_ids = [vocab['feats2id'][f'{feat_map[i][5:]}={row[i]}'] if row[i] != '_' else
                 vocab['feats2id'][row[i]] for i in sorted(feat_map)]
     values = [row.sent_id, row.token_id, row.analysis_id, row.morpheme_id]
@@ -80,39 +79,6 @@ def get_lattices_arr(df, vocab, max_morphemes, infuse):
 
 def load_inf_lattices(root_path, partition, morph_level):
     return load_data_samples(root_path / morph_level, partition, 'lattices-inf', get_inf_lattices_arr)
-
-
-def lattice_ids_to_lattice_data(token_ids, lattice_ids, vocab):
-    column_names = ['from_node_id', 'to_node_id', 'form', 'lemma', 'tag', 'feats', 'token_id', 'token', 'analysis_id',
-                    'morpheme_id']
-    analysis_indices = lattice_ids[:, :, 0].nonzero()
-    token_indices = analysis_indices[0]
-    morpheme_indices = analysis_indices[1]
-    form_ids = lattice_ids[:, :, 0]
-    lemma_ids = lattice_ids[:, :, 1]
-    tag_ids = lattice_ids[:, :, 2]
-    feat_ids = lattice_ids[:, :, 3:]
-    # Remove <PAD>s and transform into vocab values
-    mask = form_ids != 0
-    tokens = to_token_vec(token_ids, vocab)
-    forms = to_form_vec(form_ids[mask], vocab)
-    lemmas = to_lemma_vec(lemma_ids[mask], vocab)
-    tags = to_tag_vec(tag_ids[mask], vocab)
-    feats_str = feats_to_str(to_feat_vec(feat_ids[mask], vocab))
-    rows = []
-    for i in range(len(forms)):
-        from_node_id = i
-        to_node_id = i + 1
-        form = forms[i]
-        lemma = lemmas[i]
-        tag = tags[i]
-        feats = feats_str[i]
-        token_idx = token_indices[i]
-        token = tokens[token_idx]
-        morpheme_idx = morpheme_indices[i]
-        row = [from_node_id, to_node_id, form, lemma, tag, feats, token_idx + 1, token, 0, morpheme_idx]
-        rows.append(row)
-    return pd.DataFrame(rows, columns=column_names)
 
 
 def main():

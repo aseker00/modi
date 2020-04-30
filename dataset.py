@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import defaultdict, Counter
 import fasttext_emb as ft
 import pandas as pd
 import numpy as np
@@ -159,24 +159,28 @@ def load_data_samples(root_path, partition, tag_type, morph_seq_func):
 
 
 def feats_to_str(feats):
-    ordered_feat_keys = ['gen', 'num', 'per', 'tense', 'suf_gen', 'suf_num', 'suf_per']
-    res = []
-    feats_maps = [{kv[0]: kv[1] for kv in [f.split('=') for f in vec if f != '_']} for vec in feats]
-    for m in feats_maps:
-        if not m:
-            res.append('_')
-        else:
+    feat_keys = ['gen', 'num', 'per', 'tense', 'suf_gen', 'suf_num', 'suf_per']
+    feat_str_rows = []
+    for token_feats in feats:
+        token_feat_str_rows = []
+        for morpheme_feats in token_feats:
+            morpheme_feats = np.unique(morpheme_feats)
+            if morpheme_feats.size == 1:
+                token_feat_str_rows.append(morpheme_feats.item())
+                continue
+            morpheme_feats_dict = {f[0]: f[1] for f in [f.split("=") for f in morpheme_feats[morpheme_feats != '_']]}
             s = []
-            for k in ordered_feat_keys:
-                if k in m:
-                    if k == 'tense':
-                        v = m[k]
-                        s.append(f'{k}={v}')
+            for feat_name in feat_keys:
+                if feat_name in morpheme_feats_dict:
+                    if feat_name == 'tense':
+                        feat_value = morpheme_feats_dict[feat_name]
+                        s.append(f'{feat_name}={feat_value}')
                     else:
-                        for v in m[k]:
-                            s.append(f'{k}={v}')
-            res.append('|'.join(s))
-    return res
+                        for feat_value in morpheme_feats_dict[feat_name]:
+                            s.append(f'{feat_name}={feat_value}')
+            token_feat_str_rows.append('|'.join(s))
+        feat_str_rows.append(np.array(token_feat_str_rows))
+    return np.stack(feat_str_rows)
 
 
 to_form_vec = np.vectorize(lambda x, vocab: vocab['forms'][x])
@@ -189,11 +193,51 @@ to_lemma_id_vec = np.vectorize(lambda x, vocab: vocab['lemma2id'][x])
 to_tag_id_vec = np.vectorize(lambda x, vocab: vocab['tag2id'][x])
 to_feat_id_vec = np.vectorize(lambda x, vocab: vocab['feat2id'][x])
 to_token_id_vec = np.vectorize(lambda x, vocab: vocab['token2id'][x])
-split_multi_tags = np.vectorize(lambda x: len(x.split('-')))
+get_multi_tags_len = np.vectorize(lambda x: len(x.split('-')))
 
 
-def token_tag_eval(gold: pd.DataFrame, pred: pd.DataFrame):
-    gold_gb = gold.groupby([gold.sent_id, gold.token_id])
-    pred_gb = pred.groupby([pred.sent_id, pred.token_id])
-    for (sent_id, token_id), gold_df in gold_gb:
-        pred_df = pred_gb[sent_id, token_id]
+def eval(gold_df, pred_df):
+    gold_gb = gold_df.groupby([gold_df.sent_id, gold_df.token_id])
+    pred_gb = pred_df.groupby([pred_df.sent_id, pred_df.token_id])
+    gold_counts, pred_counts, intersection_counts = 0, 0, 0
+    for (sent_id, token_id), gold in sorted(gold_gb):
+        if (sent_id, token_id) not in pred_gb.groups:
+            raise Exception(f'key {(sent_id, token_id)} missing from prediction dataframe')
+        pred = pred_gb.get_group((sent_id, token_id))
+        gold_count, pred_count = Counter(gold.tag.tolist()), Counter(pred.tag.tolist())
+        intersection_count = gold_count & pred_count
+        gold_counts += sum(gold_count.values())
+        pred_counts += sum(pred_count.values())
+        intersection_counts += sum(intersection_count.values())
+    precision = intersection_counts / pred_counts if pred_counts else 0.0
+    recall = intersection_counts / gold_counts if gold_counts else 0.0
+    f1 = 2.0 * (precision * recall) / (precision + recall) if precision + recall else 0.0
+    return precision, recall, f1
+
+
+def to_dataset(lattices):
+    for i, df in enumerate(lattices):
+        df.insert(0, 'sent_id', i + 1)
+    return pd.concat(lattices)
+
+
+def to_lattice_data(tokens, lattices):
+    column_names = ['from_node_id', 'to_node_id', 'form', 'lemma', 'tag', 'feats', 'token_id', 'token', 'analysis_id',
+                    'morpheme_id']
+    token_forms = lattices[:, 0, :]
+    token_lemmas = lattices[:, 1, :]
+    token_tags = lattices[:, 2, :]
+    token_feats = lattices[:, 3, :]
+    rows = []
+    token_indices, morpheme_indices = (token_tags != '<PAD>').nonzero()
+    for i, (token_idx, morpheme_idx) in enumerate(zip(token_indices, morpheme_indices)):
+        from_node_id = i
+        to_node_id = i + 1
+        form = token_forms[token_idx, morpheme_idx]
+        lemma = token_lemmas[token_idx, morpheme_idx]
+        tag = token_tags[token_idx, morpheme_idx]
+        feat = token_feats[token_idx, morpheme_idx]
+        token = tokens[token_idx]
+        row = [from_node_id, to_node_id, form, lemma, tag, feat, token_idx + 1, token, 0, morpheme_idx]
+        rows.append(row)
+    return pd.DataFrame(rows, columns=column_names)

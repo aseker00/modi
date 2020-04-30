@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import dataset as ds
+import numpy as np
 
 
 def batch_narrow(tokens, chars, char_lengths, token_lengths, labels):
@@ -78,17 +79,6 @@ def batch_mask_select_reconstruct(samples, indices, masks, mask_id):
     return torch.nn.utils.rnn.pad_sequence(res, batch_first=True)
 
 
-def print_scores(samples, ignore_lables):
-    pred_tags = [tag for batch in samples for sample in batch[0] for tag in sample[1]]
-    gold_tags = [tag for batch in samples for sample in batch[1] for tag in sample[1]]
-    # precision, recall, fscore, support = precision_recall_fscore_support(gold_tags, pred_tags)
-    labels = set(pred_tags + gold_tags)
-    for label in ignore_lables:
-        labels.discard(label)
-    print(classification_report(gold_tags, pred_tags, labels=list(labels)))
-    # print(confusion_matrix(gold_tags, pred_tags))
-
-
 def to_samples(pred_tag_seq, gold_tag_seq, pred_tag_seq_mask, gold_tag_seq_mask, token_seq, token_lengths, vocab):
     token_ids = [seq[:len] for seq, len in zip(token_seq, token_lengths)]
     token_samples = [[vocab['tokens'][i] for i in x] for x in token_ids]
@@ -137,15 +127,15 @@ class ModelOptimizer:
         self.optimizer.zero_grad()
 
 
-def print_sample_labels(sample):
+def print_sample_tags(sample):
     print(f'tokens: {sample[0]}')
-    print(f'gold: {sample[1]}')
-    print(f'pred: {sample[2]}')
+    print(f'gold: {sample[1][:, 2]}')
+    print(f'pred: {sample[2][:, 2]}')
 
 
-def print_label_metrics(samples, remove_labels):
-    gold_labels = [tag for sample in samples for tags in sample[1] for tag in tags]
-    pred_labels = [tag for sample in samples for tags in sample[2] for tag in tags]
+def print_tag_metrics(samples, remove_labels):
+    gold_labels = [tag for sample in samples for tags in sample[1][:, 2, :] for tag in tags]
+    pred_labels = [tag for sample in samples for tags in sample[2][:, 2, :] for tag in tags]
     labels = set(pred_labels + gold_labels)
     for label in remove_labels:
         labels.discard(label)
@@ -154,6 +144,39 @@ def print_label_metrics(samples, remove_labels):
     # precision, recall, fscore, support = precision_recall_fscore_support(gold_tags, pred_tags)
 
 
-def to_tokens_arr(token_ids, token_mask, vocab):
+def to_tokens(token_ids, token_mask, vocab):
     tokens = token_ids[:, :, 0, 0][token_mask]
-    return ds.to_token_vec(tokens.cpu().numpy(), vocab)
+    return ds.to_token_vec(tokens, vocab)
+
+
+def to_token_lattice(tag_ids, token_mask, vocab):
+    token_tag_ids = tag_ids[token_mask]
+    # First tag in each token must have a value (non <XXX> tag)
+    token_tag_ids[:, 0][token_tag_ids[:, 0] == vocab['tag2id']['<EOT>']] = vocab['tag2id']['_']
+    token_tag_ids[token_tag_ids == vocab['tag2id']['<EOT>']] = vocab['tag2id']['<PAD>']
+    token_form_ids = np.zeros_like(token_tag_ids)
+    token_lemma_ids = np.zeros_like(token_tag_ids)
+    token_feat_ids = np.zeros_like(token_tag_ids)
+    token_form_ids[token_tag_ids != vocab['form2id']['<PAD>']] = vocab['form2id']['_']
+    token_lemma_ids[token_tag_ids != vocab['lemma2id']['<PAD>']] = vocab['lemma2id']['_']
+    token_feat_ids[token_tag_ids != vocab['feats2id']['<PAD>']] = vocab['feats2id']['_']
+    token_forms = ds.to_form_vec(token_form_ids, vocab)
+    token_lemmas = ds.to_lemma_vec(token_lemma_ids, vocab)
+    token_tags = ds.to_tag_vec(token_tag_ids, vocab)
+    token_feats_str = ds.feats_to_str(ds.to_feat_vec(token_feat_ids, vocab))
+    return np.stack([token_forms, token_lemmas, token_tags, token_feats_str], axis=1)
+
+
+def to_tags_arr(lattice_df):
+    values = [x[1].tag.values for x in lattice_df.groupby('token_id')]
+    max_len = max([len(a) for a in values])
+    tags_arr = np.full_like(lattice_df.tag.values, shape=(len(values), max_len), fill_value='<PAD>')
+    for i, a in enumerate(values):
+        tags_arr[i, :len(a)] = a
+    return tags_arr
+
+
+def eval_samples(samples):
+    gold_df = ds.to_dataset([ds.to_lattice_data(sample[0], sample[1]) for sample in samples])
+    pred_df = ds.to_dataset([ds.to_lattice_data(sample[0], sample[2]) for sample in samples])
+    return ds.eval(gold_df, pred_df)

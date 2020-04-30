@@ -3,7 +3,7 @@ from models import *
 from models_ptrnet import *
 import seqtag_dataset as ds
 import seqtag_treebank as tb
-from utils import *
+from seqtag_utils import *
 from torch.optim.adamw import AdamW
 from torch.utils.data.dataloader import DataLoader
 from pathlib import Path
