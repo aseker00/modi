@@ -34,6 +34,12 @@ else:
     torch.save(dev_set, str(dev_set_path))
     torch.save(test_set, str(test_set_path))
     torch.save(train_set, str(train_set_path))
+vocab_tags = set([tag for multi_tag in vocab['tags'] for tag in multi_tag.split('-')])
+vocab_tags = [tag for tag in vocab_tags if tag not in vocab['tags']]
+for tag in vocab_tags:
+    vocab['tag2id'][tag] = len(vocab['tags'])
+    vocab['tags'].append(tag)
+
 if char_ft_emb_path.exists() and token_ft_emb_path.exists():
     char_ft_emb = torch.load(char_ft_emb_path)
     token_ft_emb = torch.load(token_ft_emb_path)
@@ -44,13 +50,6 @@ else:
 train_data = DataLoader(train_set, batch_size=1, shuffle=True)
 dev_data = DataLoader(dev_set, batch_size=1)
 test_data = DataLoader(test_set, batch_size=1)
-
-
-vocab_tags = set([tag for multi_tag in vocab['tags'] for tag in multi_tag.split('-')])
-vocab_tags = [tag for tag in vocab_tags if tag not in vocab['tags']]
-for tag in vocab_tags:
-    vocab['tag2id'][tag] = len(vocab['tags'])
-    vocab['tags'].append(tag)
 
 
 device = None
@@ -112,12 +111,15 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
         print_loss += sum(b_losses)
         total_loss += sum(b_losses)
         b_pred_multi_tag_ids = model.decode(b_scores)
+        b_token_ids = b_token_ids.cpu().numpy()
         b_token_mask = b_token_mask.cpu().numpy()
-        gold_tokens = to_tokens(b_token_ids.cpu().numpy(), b_token_mask, vocab)
+        b_gold_multi_tag_ids = b_gold_multi_tag_ids.cpu().numpy()
+        b_pred_multi_tag_ids = b_pred_multi_tag_ids.cpu().numpy()
+        gold_tokens = to_tokens(b_token_ids, b_token_mask, vocab)
         max_token_tags_num = get_num_token_tags(b_gold_multi_tag_ids)
         max_token_tags_num = max(max_token_tags_num, get_num_token_tags(b_pred_multi_tag_ids))
-        b_gold_tag_ids = to_tag_ids(b_gold_multi_tag_ids.cpu().numpy(), max_token_tags_num)
-        b_pred_tag_ids = to_tag_ids(b_pred_multi_tag_ids.cpu().numpy(), max_token_tags_num)
+        b_gold_tag_ids = to_tag_ids(b_gold_multi_tag_ids, max_token_tags_num)
+        b_pred_tag_ids = to_tag_ids(b_pred_multi_tag_ids, max_token_tags_num)
         gold_token_lattice = to_token_lattice(b_gold_tag_ids, b_token_mask, vocab)
         pred_token_lattice = to_token_lattice(b_pred_tag_ids, b_token_mask, vocab)
         print_samples.append((gold_tokens, gold_token_lattice, pred_token_lattice))

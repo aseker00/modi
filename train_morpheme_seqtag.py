@@ -34,6 +34,7 @@ else:
     torch.save(dev_set, str(dev_set_path))
     torch.save(test_set, str(test_set_path))
     torch.save(train_set, str(train_set_path))
+
 if char_ft_emb_path.exists() and token_ft_emb_path.exists():
     char_ft_emb = torch.load(char_ft_emb_path)
     token_ft_emb = torch.load(token_ft_emb_path)
