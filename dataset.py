@@ -196,13 +196,11 @@ to_token_id_vec = np.vectorize(lambda x, vocab: vocab['token2id'][x])
 get_multi_tags_len = np.vectorize(lambda x: len(x.split('-')))
 
 
-def eval(gold_df, pred_df):
+def eval_lattices(gold_df, pred_df):
     gold_gb = gold_df.groupby([gold_df.sent_id, gold_df.token_id])
     pred_gb = pred_df.groupby([pred_df.sent_id, pred_df.token_id])
     gold_counts, pred_counts, intersection_counts = 0, 0, 0
     for (sent_id, token_id), gold in sorted(gold_gb):
-        if (sent_id, token_id) not in pred_gb.groups:
-            raise Exception(f'key {(sent_id, token_id)} missing from prediction dataframe')
         pred = pred_gb.get_group((sent_id, token_id))
         gold_count, pred_count = Counter(gold.tag.tolist()), Counter(pred.tag.tolist())
         intersection_count = gold_count & pred_count
@@ -241,3 +239,42 @@ def to_lattice_data(tokens, lattices):
         row = [from_node_id, to_node_id, form, lemma, tag, feat, token_idx + 1, token, 0, morpheme_idx]
         rows.append(row)
     return pd.DataFrame(rows, columns=column_names)
+
+
+def to_tokens(token_ids, token_mask, vocab):
+    tokens = token_ids[:, :, 0, 0][token_mask]
+    return to_token_vec(tokens, vocab)
+
+
+def to_token_lattice(tag_ids, token_mask, vocab):
+    token_tag_ids = tag_ids[token_mask]
+    # First tag in each token must have a value (non <XXX> tag)
+    if np.any(token_tag_ids[:, 0] < vocab['tag2id']['_']):
+        token_tag_ids[:, 0][token_tag_ids[:, 0] < vocab['tag2id']['_']] = vocab['tag2id']['_']
+    token_tag_ids[token_tag_ids < vocab['tag2id']['_']] = vocab['tag2id']['<PAD>']
+    token_form_ids = np.zeros_like(token_tag_ids)
+    token_lemma_ids = np.zeros_like(token_tag_ids)
+    token_feat_ids = np.zeros_like(token_tag_ids)
+    token_form_ids[token_tag_ids != vocab['form2id']['<PAD>']] = vocab['form2id']['_']
+    token_lemma_ids[token_tag_ids != vocab['lemma2id']['<PAD>']] = vocab['lemma2id']['_']
+    token_feat_ids[token_tag_ids != vocab['feats2id']['<PAD>']] = vocab['feats2id']['_']
+    token_forms = to_form_vec(token_form_ids, vocab)
+    token_lemmas = to_lemma_vec(token_lemma_ids, vocab)
+    token_tags = to_tag_vec(token_tag_ids, vocab)
+    token_feats_str = feats_to_str(to_feat_vec(token_feat_ids, vocab))
+    return np.stack([token_forms, token_lemmas, token_tags, token_feats_str], axis=1)
+
+
+def to_tags_arr(lattice_df):
+    values = [x[1].tag.values for x in lattice_df.groupby('token_id')]
+    max_len = max([len(a) for a in values])
+    tags_arr = np.full_like(lattice_df.tag.values, '<PAD>', shape=(len(values), max_len))
+    for i, a in enumerate(values):
+        tags_arr[i, :len(a)] = a
+    return tags_arr
+
+
+def eval_samples(samples):
+    gold_df = to_dataset([to_lattice_data(sample[0], sample[1]) for sample in samples])
+    pred_df = to_dataset([to_lattice_data(sample[0], sample[2]) for sample in samples])
+    return eval_lattices(gold_df, pred_df)

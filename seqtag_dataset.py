@@ -20,7 +20,7 @@ def to_morpheme_row(row, vocab, morpheme_type):
     return values
 
 
-def get_fixed_arr(df, vocab, max_morphemes):
+def get_fixed_samples(df, vocab, max_morphemes):
     column_names = ['sent_idx', 'token_idx', 'analysis_idx', 'morpheme_idx']
     morph_column_names = ['form_id', 'lemma_id', 'tag_id', 'feats_id']
     column_names += morph_column_names
@@ -50,7 +50,7 @@ def get_fixed_arr(df, vocab, max_morphemes):
     return samples_arr[samples_df.sent_idx.unique() - 1]
 
 
-def get_var_arr(df, vocab, max_morphemes):
+def get_var_samples(df, vocab, max_morphemes):
     column_names = ['sent_idx', 'token_idx', 'analysis_idx', 'morpheme_idx']
     morph_column_names = ['form_id', 'lemma_id', 'tag_id', 'feats_id']
     column_names += morph_column_names
@@ -96,14 +96,14 @@ def get_var_arr(df, vocab, max_morphemes):
 def load_samples(root_path, partition, morph_level, seq_type):
     if morph_level == 'morpheme':
         if seq_type == 'fixed':
-            return load_data_samples(root_path / morph_level, partition, 'gold-lattices', get_fixed_arr)
+            return load_data_samples(root_path / morph_level, partition, 'gold-lattices', get_fixed_samples)
         elif seq_type == 'var':
-            return load_data_samples(root_path / morph_level, partition, 'gold-lattices', get_var_arr)
+            return load_data_samples(root_path / morph_level, partition, 'gold-lattices', get_var_samples)
     elif morph_level == 'morpheme-type':
         if seq_type == 'fixed':
-            return load_data_samples(root_path / morph_level, partition, 'gold-lattices-multi', get_fixed_arr)
+            return load_data_samples(root_path / morph_level, partition, 'gold-lattices-multi', get_fixed_samples)
         elif seq_type == 'var':
-            return load_data_samples(root_path / morph_level, partition, 'gold-lattices-multi', get_var_arr)
+            return load_data_samples(root_path / morph_level, partition, 'gold-lattices-multi', get_var_samples)
 
 
 def main():

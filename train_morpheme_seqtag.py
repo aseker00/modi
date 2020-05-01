@@ -28,9 +28,9 @@ else:
     token_lengths = {t: torch.tensor(token_arr[t][1], dtype=torch.long) for t in token_arr}
     token_samples = {t: torch.tensor(token_arr[t][0], dtype=torch.long) for t in token_arr}
     morph_samples = {t: torch.tensor(morph_arr[t], dtype=torch.long) for t in morph_arr}
-    dev_set = TensorDataset(token_samples['dev'], token_lengths['dev'], morph_samples['dev'])
-    test_set = TensorDataset(token_samples['test'], token_lengths['test'], morph_samples['test'])
-    train_set = TensorDataset(token_samples['train'], token_lengths['train'], morph_samples['train'])
+    dev_set = TensorDataset(*[s['dev'] for s in [token_samples, token_lengths, morph_samples]])
+    test_set = TensorDataset(*[s['test'] for s in [token_samples, token_lengths, morph_samples]])
+    train_set = TensorDataset(*[s['train'] for s in [token_samples, token_lengths, morph_samples]])
     torch.save(dev_set, str(dev_set_path))
     torch.save(test_set, str(test_set_path))
     torch.save(train_set, str(train_set_path))
@@ -42,6 +42,7 @@ else:
     char_ft_emb, token_ft_emb, _, _ = ds.load_ft_vec(root_path / f'{seq_type}/vocab', ft_root_path, vocab)
     torch.save(char_ft_emb, str(char_ft_emb_path))
     torch.save(token_ft_emb, str(token_ft_emb_path))
+
 train_data = DataLoader(train_set, batch_size=1, shuffle=True)
 dev_data = DataLoader(dev_set, batch_size=1)
 test_data = DataLoader(test_set, batch_size=1)
@@ -73,16 +74,18 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
         b_gold_tag_ids = b_morpheme_ids[:, :, :, 2]
         b_token_mask = b_token_ids[:, :, 0, 0] != 0
         b_tags_mask = b_gold_tag_ids != 0
-        # [b_max_tokens, b_max_chars] = b_token_lengths[:, :].max(dim=1)[0][0].tolist()
         b_scores = model(b_token_ids, b_token_lengths, b_gold_tag_ids)
         b_loss = model.loss(b_scores, b_gold_tag_ids, b_tags_mask)
         print_loss += b_loss
         total_loss += b_loss
         b_pred_tag_ids = model.decode(b_scores)
+        b_token_ids = b_token_ids.cpu().numpy()
         b_token_mask = b_token_mask.cpu().numpy()
-        gold_tokens = to_tokens(b_token_ids.cpu().numpy(), b_token_mask, vocab)
-        gold_token_lattice = to_token_lattice(b_gold_tag_ids.cpu().numpy(), b_token_mask, vocab)
-        pred_token_lattice = to_token_lattice(b_pred_tag_ids.cpu().numpy(), b_token_mask, vocab)
+        b_gold_tag_ids = b_gold_tag_ids.cpu().numpy()
+        b_pred_tag_ids = b_pred_tag_ids.cpu().numpy()
+        gold_tokens = ds.to_tokens(b_token_ids, b_token_mask, vocab)
+        gold_token_lattice = ds.to_token_lattice(b_gold_tag_ids, b_token_mask, vocab)
+        pred_token_lattice = ds.to_token_lattice(b_pred_tag_ids, b_token_mask, vocab)
         print_samples.append((gold_tokens, gold_token_lattice, pred_token_lattice))
         total_samples.append((gold_tokens, gold_token_lattice, pred_token_lattice))
         if optimizer is not None:
@@ -91,14 +94,14 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
             print(f'epoch {epoch}, {phase} step {i + 1}, loss: {print_loss / print_every}')
             print_tag_metrics(print_samples, ['<PAD>'])
             print_sample_tags(print_samples[-1])
-            print(eval_samples(print_samples))
+            print(ds.eval_samples(print_samples))
             print_loss = 0
             print_samples = []
     if optimizer is not None:
         optimizer.force_step()
     print(f'epoch {epoch}, {phase} total loss: {total_loss / len(data)}')
     print_tag_metrics(total_samples, ['<PAD>'])
-    print(eval_samples(total_samples))
+    print(ds.eval_samples(total_samples))
 
 
 # torch.autograd.set_detect_anomaly(True)

@@ -1,4 +1,3 @@
-from pathlib import Path
 import random
 from tqdm import trange
 from torch.optim.adamw import AdamW
@@ -8,6 +7,7 @@ import lattice_dataset as ds
 from lattice_models import *
 from seqtag_models import *
 from seqtag_utils import *
+from pathlib import Path
 
 root_path = Path.home() / 'dev/aseker00/modi/treebank/spmrl/heb/seqtag'
 ft_root_path = Path.home() / 'dev/aseker00/fasttext'
@@ -36,12 +36,10 @@ else:
     dev_set = TensorDataset(*[s['dev'] for s in [token_samples, token_lengths, lattice_samples, analysis_lengths]])
     test_set = TensorDataset(*[s['test'] for s in [token_samples, token_lengths, lattice_samples, analysis_lengths]])
     train_set = TensorDataset(*[s['train'] for s in [token_samples, token_lengths, lattice_samples, analysis_lengths]])
-    # dev_set = TensorDataset(token_samples['dev'], token_lengths['dev'], lattice_samples['dev'], analysis_lengths['dev'])
-    # test_set = TensorDataset(token_samples['test'], token_lengths['test'], lattice_samples['test'], analysis_lengths['test'])
-    # train_set = TensorDataset(token_samples['train'], token_lengths['train'], lattice_samples['train'], analysis_lengths['train'])
     torch.save(dev_set, str(dev_set_path))
     torch.save(test_set, str(test_set_path))
     torch.save(train_set, str(train_set_path))
+
 if (char_ft_emb_path.exists() and token_ft_emb_path.exists() and form_ft_emb_path.exists() and
         lemma_ft_emb_path.exists()):
     char_ft_emb = torch.load(char_ft_emb_path)
@@ -55,6 +53,7 @@ else:
     torch.save(token_ft_emb, str(token_ft_emb_path))
     torch.save(form_ft_emb, str(form_ft_emb_path))
     torch.save(lemma_ft_emb, str(lemma_ft_emb_path))
+
 train_data = DataLoader(train_set, batch_size=1, shuffle=True)
 dev_data = DataLoader(dev_set, batch_size=1)
 test_data = DataLoader(test_set, batch_size=1)
@@ -102,16 +101,7 @@ def pack_lattice(lattice_ids, mask, indices):
 
 def to_token_lattice(lattice_ids, token_mask, analysis_indices):
     token_lattice_ids = pack_lattice(lattice_ids, token_mask, analysis_indices)
-    token_lattice_ids = token_lattice_ids.cpu().numpy()
-    token_form_ids = token_lattice_ids[:, :, 0]
-    token_lemma_ids = token_lattice_ids[:, :, 1]
-    token_tag_ids = token_lattice_ids[:, :, 2]
-    token_feat_ids = token_lattice_ids[:, :, 3:]
-    token_forms = ds.to_form_vec(token_form_ids, vocab)
-    token_lemmas = ds.to_lemma_vec(token_lemma_ids, vocab)
-    token_tags = ds.to_tag_vec(token_tag_ids, vocab)
-    token_feats_str = ds.feats_to_str(ds.to_feat_vec(token_feat_ids, vocab))
-    return np.stack([token_forms, token_lemmas, token_tags, token_feats_str], axis=1)
+    return ds.to_token_lattice(token_lattice_ids.cpu().numpy())
 
 
 def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_forcing=None):
@@ -119,15 +109,15 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
     total_samples, print_samples = [], []
     for i, batch in enumerate(data):
         batch = tuple(t.to(device) for t in batch)
-        b_tokens = batch[0]
+        b_token_ids = batch[0]
         b_token_lengths = batch[1]
         b_is_gold = batch[2][:, :, :, 0, 0]
-        b_lattice = batch[2][:, :, :, :, 1:]
+        b_lattice_ids = batch[2][:, :, :, :, 1:]
         b_analysis_lengths = batch[3]
-        b_token_mask = b_tokens[:, :, 0, 0] != 0
-        b_batch_size = b_lattice.shape[0]
-        b_token_seq_size = b_lattice.shape[1]
-        b_analysis_seq_size = b_lattice.shape[2]
+        b_token_mask = b_token_ids[:, :, 0, 0] != 0
+        b_batch_size = b_lattice_ids.shape[0]
+        b_token_seq_size = b_lattice_ids.shape[1]
+        b_analysis_seq_size = b_lattice_ids.shape[2]
         b_gold_indices = torch.ones((b_is_gold.shape[0], b_is_gold.shape[1]), dtype=torch.long, device=device,
                                     requires_grad=False) * (-1)
         b_lattice_mask_index = torch.arange(b_analysis_seq_size, dtype=torch.long, device=device,
@@ -138,20 +128,21 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
         teach = optimizer is not None and (teacher_forcing is None or random.uniform(0, 1) < teacher_forcing)
         # TODO: Change model to return scores in the same shape as tokens [batch_size, tokens_seq_size]?
         if teach:
-            b_scores = model(b_lattice, b_lattice_mask, b_tokens, b_token_lengths, b_gold_indices)
+            b_scores = model(b_lattice_ids, b_lattice_mask, b_token_ids, b_token_lengths, b_gold_indices)
         else:
-            b_scores = model(b_lattice, b_lattice_mask, b_tokens, b_token_lengths)
+            b_scores = model(b_lattice_ids, b_lattice_mask, b_token_ids, b_token_lengths)
         b_loss = model.loss(b_scores, b_gold_indices, b_token_mask)
         print_loss += b_loss
         total_loss += b_loss
         b_pred_indices = model.decode(b_scores)
-        gold_tokens = to_tokens(b_tokens, b_token_mask, vocab)
-        # b_lattice = b_lattice.cpu().numpy()
+        b_token_ids = b_token_ids.cpu().numpy()
         # b_token_mask = b_token_mask.cpu().numpy()
+        gold_tokens = ds.to_tokens(b_token_ids, b_token_mask.cpu().numpy(), vocab)
+        # b_lattice = b_lattice.cpu().numpy()
         # b_gold_indices = b_gold_indices.cpu().numpy()
         # b_pred_indices = b_pred_indices.cpu().numpy()
-        gold_token_lattice = to_token_lattice(b_lattice, b_token_mask, b_gold_indices)
-        pred_token_lattice = to_token_lattice(b_lattice, b_token_mask, b_pred_indices)
+        gold_token_lattice = to_token_lattice(b_lattice_ids, b_token_mask, b_gold_indices)
+        pred_token_lattice = to_token_lattice(b_lattice_ids, b_token_mask, b_pred_indices)
         print_samples.append((gold_tokens, gold_token_lattice, pred_token_lattice))
         total_samples.append((gold_tokens, gold_token_lattice, pred_token_lattice))
         if optimizer is not None:
@@ -160,14 +151,14 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
             print(f'epoch {epoch}, {phase} step {i + 1}, loss: {print_loss / print_every}')
             print_tag_metrics(print_samples, ['<PAD>'])
             print_sample_tags(print_samples[-1])
-            print(eval_samples(print_samples))
+            print(ds.eval_samples(print_samples))
             print_loss = 0
             print_samples = []
     if optimizer is not None:
         optimizer.force_step()
     print(f'epoch {epoch}, {phase} total loss: {total_loss / len(data)}')
     print_tag_metrics(total_samples, ['<PAD>'])
-    print(eval_samples(total_samples))
+    print(ds.eval_samples(total_samples))
 
 
 lr = 1e-3

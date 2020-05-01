@@ -37,15 +37,15 @@ def to_morpheme_row(row, vocab, feat_map, infuse):
     return values
 
 
-def get_uninf_lattices_arr(df, vocab, max_morphemes):
-    return get_lattices_arr(df, vocab, max_morphemes, False)
+def get_uninf_lattices(df, vocab, max_morphemes):
+    return get_lattices(df, vocab, max_morphemes, False)
 
 
-def get_inf_lattices_arr(df, vocab, max_morphemes):
-    return get_lattices_arr(df, vocab, max_morphemes, True)
+def get_inf_lattices(df, vocab, max_morphemes):
+    return get_lattices(df, vocab, max_morphemes, True)
 
 
-def get_lattices_arr(df, vocab, max_morphemes, infuse):
+def get_lattices(df, vocab, max_morphemes, infuse):
     feat_map = {i+1: f for i, f in enumerate(df) if f[:5] == 'feat_'}
     column_names = ['sent_idx', 'token_idx', 'analysis_idx', 'morpheme_idx']
     gold_column_names = ['is_gold']
@@ -78,7 +78,19 @@ def get_lattices_arr(df, vocab, max_morphemes, infuse):
 
 
 def load_inf_lattices(root_path, partition, morph_level):
-    return load_data_samples(root_path / morph_level, partition, 'lattices-inf', get_inf_lattices_arr)
+    return load_data_samples(root_path / morph_level, partition, 'lattices-inf', get_inf_lattices)
+
+
+def to_token_lattice(token_lattice_ids):
+    token_form_ids = token_lattice_ids[:, :, 0]
+    token_lemma_ids = token_lattice_ids[:, :, 1]
+    token_tag_ids = token_lattice_ids[:, :, 2]
+    token_feat_ids = token_lattice_ids[:, :, 3:]
+    token_forms = to_form_vec(token_form_ids, vocab)
+    token_lemmas = to_lemma_vec(token_lemma_ids, vocab)
+    token_tags = to_tag_vec(token_tag_ids, vocab)
+    token_feats_str = feats_to_str(to_feat_vec(token_feat_ids, vocab))
+    return np.stack([token_forms, token_lemmas, token_tags, token_feats_str], axis=1)
 
 
 def main():
