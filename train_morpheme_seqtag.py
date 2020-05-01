@@ -8,23 +8,25 @@ from seqtag_models import *
 from pathlib import Path
 
 
-root_path = Path.home() / 'dev/aseker00/modi/treebank/spmrl/heb/seqtag'
+root_path = Path.home() / 'dev/aseker00/modi'
+tb_path = root_path / 'treebank/spmrl/heb'
+data_path = root_path / 'data/spmrl/heb'
 ft_root_path = Path.home() / 'dev/aseker00/fasttext'
 seq_type = 'morpheme'
-dev_set_path = Path(f'{seq_type}_dev.pth')
-test_set_path = Path(f'{seq_type}_test.pth')
-train_set_path = Path(f'{seq_type}_train.pth')
-char_ft_emb_path = Path('char_ft_emb.pth')
-token_ft_emb_path = Path('token_ft_emb.pth')
+dev_set_path = data_path / seq_type / 'dev.pth'
+test_set_path = data_path / seq_type / 'test.pth'
+train_set_path = data_path / seq_type / 'train.pth'
+char_ft_emb_path = data_path / 'char-ft-emb.pth'
+token_ft_emb_path = data_path / 'token-ft-emb.pth'
 
 if dev_set_path.exists() and test_set_path.exists() and train_set_path.exists():
     dev_set = torch.load(str(dev_set_path))
     test_set = torch.load(str(test_set_path))
     train_set = torch.load(str(train_set_path))
-    vocab = ds.load_vocab(root_path / f'{seq_type}/vocab')
+    vocab = ds.load_vocab(tb_path / f'{seq_type}/vocab')
 else:
     partition = ['dev', 'test', 'train']
-    token_arr, morph_arr, vocab = ds.load_samples(root_path, partition, seq_type, 'var')
+    token_arr, morph_arr, vocab = ds.load_samples(tb_path, partition, seq_type, 'var')
     token_lengths = {t: torch.tensor(token_arr[t][1], dtype=torch.long) for t in token_arr}
     token_samples = {t: torch.tensor(token_arr[t][0], dtype=torch.long) for t in token_arr}
     morph_samples = {t: torch.tensor(morph_arr[t], dtype=torch.long) for t in morph_arr}
@@ -39,7 +41,7 @@ if char_ft_emb_path.exists() and token_ft_emb_path.exists():
     char_ft_emb = torch.load(char_ft_emb_path)
     token_ft_emb = torch.load(token_ft_emb_path)
 else:
-    char_ft_emb, token_ft_emb, _, _ = ds.load_ft_vec(root_path / f'{seq_type}/vocab', ft_root_path, vocab)
+    char_ft_emb, token_ft_emb, _, _ = ds.load_ft_vec(tb_path / f'{seq_type}/vocab', ft_root_path, vocab)
     torch.save(char_ft_emb, str(char_ft_emb_path))
     torch.save(token_ft_emb, str(token_ft_emb_path))
 

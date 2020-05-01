@@ -81,7 +81,7 @@ def load_inf_lattices(root_path, partition, morph_level):
     return load_data_samples(root_path / morph_level, partition, 'lattices-inf', get_inf_lattices)
 
 
-def to_token_lattice(token_lattice_ids):
+def to_token_lattice(token_lattice_ids, vocab):
     token_form_ids = token_lattice_ids[:, :, 0]
     token_lemma_ids = token_lattice_ids[:, :, 1]
     token_tag_ids = token_lattice_ids[:, :, 2]
@@ -96,7 +96,7 @@ def to_token_lattice(token_lattice_ids):
 def main():
     # partition = ['dev', 'test', 'train']
     partition = ['dev']
-    root_path = Path.home() / 'dev/aseker00/modi/treebank/spmrl/heb/seqtag'
+    root_path = Path.home() / 'dev/aseker00/modi/treebank/spmrl/heb'
     # ft_root_path = Path.home() / 'dev/aseker00/fasttext'
     # save_lattices_vocab(root_path / 'lattice', partition)
     # save_ft_vec(root_path / 'lattice/vocab', ft_root_path)

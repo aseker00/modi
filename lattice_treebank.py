@@ -141,7 +141,7 @@ def save_infused_dataset(root_path, partition):
 
 def main():
     partition = ['dev', 'test', 'train']
-    root_path = Path.home() / 'dev/aseker00/modi/treebank/spmrl/heb/seqtag'
+    root_path = Path.home() / 'dev/aseker00/modi/treebank/spmrl/heb'
     tb_path = Path.home() / 'dev/onlplab/HebrewResources/HebrewTreebank/hebtb'
     save_treebank_dataset(tb_path, root_path, partition)
     save_dataset_with_feats(root_path, partition)
