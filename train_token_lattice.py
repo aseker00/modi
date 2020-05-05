@@ -6,7 +6,7 @@ from torch.utils.data.dataset import TensorDataset
 import lattice_dataset as ds
 from lattice_models import *
 from seqtag_models import *
-from seqtag_utils import *
+from model_utils import *
 from pathlib import Path
 
 root_path = Path.home() / 'dev/aseker00/modi'
@@ -17,24 +17,22 @@ seq_type = 'lattice'
 dev_set_path = data_path / seq_type / 'dev-inf.pth'
 test_set_path = data_path / seq_type / 'test-inf.pth'
 train_set_path = data_path / seq_type / 'train-inf.pth'
-# test_set_path = Path(f'{seq_type}_inf_test.pth')
-# train_set_path = Path(f'{seq_type}_inf_train.pth')
-char_ft_emb_path = data_path / 'char-ft-emb.pth'
-token_ft_emb_path = data_path / 'token-ft-emb.pth'
-form_ft_emb_path = data_path / 'form-ft-emb.pth'
-lemma_ft_emb_path = data_path / 'lemma-ft-emb.pth'
+char_ft_emb_path = data_path / seq_type / 'char-ft-emb.pth'
+token_ft_emb_path = data_path / seq_type / 'token-ft-emb.pth'
+form_ft_emb_path = data_path / seq_type / 'form-ft-emb.pth'
+lemma_ft_emb_path = data_path / seq_type / 'lemma-ft-emb.pth'
+vocab_path = tb_path / seq_type / 'vocab'
 
-# if False:
-if dev_set_path.exists() and test_set_path.exists() and train_set_path.exists():
+if all([path.exists() for path in [dev_set_path, test_set_path, train_set_path]]):
     dev_set = torch.load(str(dev_set_path))
     test_set = torch.load(str(test_set_path))
     train_set = torch.load(str(train_set_path))
-    vocab = ds.load_vocab(tb_path / f'{seq_type}/vocab')
+    vocab = ds.load_vocab(vocab_path)
 else:
     partition = ['dev', 'test', 'train']
-    token_arr, lattice_arr, vocab = ds.load_inf_lattices(tb_path, partition, seq_type)
-    token_lengths = {t: torch.tensor(token_arr[t][1], dtype=torch.long, requires_grad=False) for t in token_arr}
-    analysis_lengths = {t: torch.tensor(lattice_arr[t][1], dtype=torch.long, requires_grad=False) for t in lattice_arr}
+    token_arr, lattice_arr, vocab = ds.load_inf_lattices(tb_path / seq_type, partition)
+    token_lengths = {t: torch.tensor(token_arr[t][1], dtype=torch.long) for t in token_arr}
+    analysis_lengths = {t: torch.tensor(lattice_arr[t][1], dtype=torch.long) for t in lattice_arr}
     token_samples = {t: torch.tensor(token_arr[t][0], dtype=torch.long) for t in token_arr}
     lattice_samples = {t: torch.tensor(lattice_arr[t][0], dtype=torch.long) for t in lattice_arr}
     dev_set = TensorDataset(*[s['dev'] for s in [token_samples, token_lengths, lattice_samples, analysis_lengths]])
@@ -44,15 +42,13 @@ else:
     torch.save(test_set, str(test_set_path))
     torch.save(train_set, str(train_set_path))
 
-if (char_ft_emb_path.exists() and token_ft_emb_path.exists() and form_ft_emb_path.exists() and
-        lemma_ft_emb_path.exists()):
+if all([path.exists() for path in [char_ft_emb_path, token_ft_emb_path, form_ft_emb_path, lemma_ft_emb_path]]):
     char_ft_emb = torch.load(char_ft_emb_path)
     token_ft_emb = torch.load(token_ft_emb_path)
     form_ft_emb = torch.load(form_ft_emb_path)
     lemma_ft_emb = torch.load(lemma_ft_emb_path)
 else:
-    char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = ds.load_ft_vec(tb_path / f'{seq_type}/vocab',
-                                                                          ft_root_path, vocab)
+    char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = ds.load_ft_vec(vocab_path, ft_root_path, vocab)
     torch.save(char_ft_emb, str(char_ft_emb_path))
     torch.save(token_ft_emb, str(token_ft_emb_path))
     torch.save(form_ft_emb, str(form_ft_emb_path))
@@ -156,6 +152,7 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
             print_tag_metrics(print_samples, ['<PAD>'])
             print_sample_tags(print_samples[-1])
             print(ds.eval_samples(print_samples))
+            print(ds.seg_eval_samples(print_samples))
             print_loss = 0
             print_samples = []
     if optimizer is not None:
@@ -163,6 +160,7 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
     print(f'epoch {epoch}, {phase} total loss: {total_loss / len(data)}')
     print_tag_metrics(total_samples, ['<PAD>'])
     print(ds.eval_samples(total_samples))
+    print(ds.seg_eval_samples(total_samples))
 
 
 lr = 1e-3

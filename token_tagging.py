@@ -4,7 +4,7 @@ from torch.utils.data.dataloader import DataLoader
 from models import *
 import seqtag_dataset as ds
 import seqtag_treebank as tb
-from seqtag_utils import *
+from model_utils import *
 
 
 from pathlib import Path

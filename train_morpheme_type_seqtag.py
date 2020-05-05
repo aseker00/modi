@@ -3,7 +3,7 @@ from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import TensorDataset
 import numpy as np
 from tqdm import trange
-from seqtag_utils import *
+from model_utils import *
 import seqtag_dataset as ds
 from seqtag_models import *
 from pathlib import Path
@@ -19,16 +19,17 @@ test_set_path = data_path / seq_type / 'test.pth'
 train_set_path = data_path / seq_type / 'train.pth'
 char_ft_emb_path = data_path / 'char-ft-emb.pth'
 token_ft_emb_path = data_path / 'token-ft-emb.pth'
+vocab_path = tb_path / seq_type / 'vocab'
 
-if dev_set_path.exists() and test_set_path.exists() and train_set_path.exists():
+if all([path.exists() for path in [dev_set_path, test_set_path, train_set_path]]):
     dev_set = torch.load(str(dev_set_path))
     test_set = torch.load(str(test_set_path))
     train_set = torch.load(str(train_set_path))
-    vocab = ds.load_vocab(tb_path / f'{seq_type}/vocab')
+    vocab = ds.load_vocab(vocab_path)
 else:
     partition = ['dev', 'test', 'train']
     token_arr, morph_arr, vocab = ds.load_samples(tb_path, partition, seq_type, 'fixed')
-    token_lengths = {t: torch.tensor(token_arr[t][1], dtype=torch.long, requires_grad=False) for t in token_arr}
+    token_lengths = {t: torch.tensor(token_arr[t][1], dtype=torch.long) for t in token_arr}
     token_samples = {t: torch.tensor(token_arr[t][0], dtype=torch.long) for t in token_arr}
     morph_samples = {t: torch.tensor(morph_arr[t], dtype=torch.long) for t in morph_arr}
     dev_set = TensorDataset(*[s['dev'] for s in [token_samples, token_lengths, morph_samples]])
@@ -43,11 +44,11 @@ for tag in vocab_tags:
     vocab['tag2id'][tag] = len(vocab['tags'])
     vocab['tags'].append(tag)
 
-if char_ft_emb_path.exists() and token_ft_emb_path.exists():
+if all([path.exists() for path in [char_ft_emb_path, token_ft_emb_path]]):
     char_ft_emb = torch.load(char_ft_emb_path)
     token_ft_emb = torch.load(token_ft_emb_path)
 else:
-    char_ft_emb, token_ft_emb, _, _ = ds.load_ft_vec(tb_path / f'{seq_type}/vocab', ft_root_path, vocab)
+    char_ft_emb, token_ft_emb, _, _ = ds.load_ft_vec(vocab_path, ft_root_path, vocab)
     torch.save(char_ft_emb, str(char_ft_emb_path))
     torch.save(token_ft_emb, str(token_ft_emb_path))
 

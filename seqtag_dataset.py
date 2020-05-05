@@ -1,11 +1,11 @@
 from pathlib import Path
 from dataset import *
-import treebank as tb
+import spmrl_treebank as tb
 
 
 def save_gold_vocab(root_path, partition, tag_type):
-    gold_lattices = tb.load_lattices_dataset(root_path, partition, tag_type)
-    vocab = get_vocab(gold_lattices)
+    gold_dataset = tb.load_dataset(root_path, partition, tag_type)
+    vocab = get_vocab(gold_dataset)
     save_vocab(root_path / 'vocab', vocab)
 
 
@@ -99,7 +99,7 @@ def load_samples(root_path, partition, morph_level, seq_type):
             return load_data_samples(root_path / morph_level, partition, 'gold-lattices', get_fixed_samples)
         elif seq_type == 'var':
             return load_data_samples(root_path / morph_level, partition, 'gold-lattices', get_var_samples)
-    elif morph_level == 'morpheme-type':
+    elif morph_level == 'morpheme-multi':
         if seq_type == 'fixed':
             return load_data_samples(root_path / morph_level, partition, 'gold-lattices-multi', get_fixed_samples)
         elif seq_type == 'var':

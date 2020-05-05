@@ -1,5 +1,5 @@
 from dataset import *
-import treebank as tb
+import spmrl_treebank as tb
 from pathlib import Path
 
 
@@ -18,18 +18,18 @@ def get_lattices_vocab(lattices, gold_lattices):
 
 
 def save_lattices_vocab(root_path, partition):
-    lattices = tb.load_lattices_dataset(root_path, partition, 'lattices')
-    gold_lattices = tb.load_lattices_dataset(root_path, partition, 'gold-lattices')
-    vocab = get_lattices_vocab(lattices, gold_lattices)
+    dataset = tb.load_dataset(root_path, partition, 'lattices')
+    gold_dataset = tb.load_dataset(root_path, partition, 'gold-lattices')
+    vocab = get_lattices_vocab(dataset, gold_dataset)
     save_vocab(root_path / 'vocab', vocab)
 
 
-def to_morpheme_row(row, vocab, feat_map, infuse):
+def to_morpheme_row(row, max_num_feats, vocab, infuse):
     form_id = vocab['form2id'][row.form]
     lemma_id = vocab['lemma2id'][row.lemma]
     tag_id = vocab['tag2id'][row.tag]
-    feat_ids = [vocab['feats2id'][f'{feat_map[i][5:]}={row[i]}'] if row[i] != '_' else
-                vocab['feats2id'][row[i]] for i in sorted(feat_map)]
+    feat_ids = [vocab['feats2id'][f] for f in row.feats.split('|')]
+    feat_ids += [vocab['feats2id']['_']] * (max_num_feats - len(feat_ids))
     values = [row.sent_id, row.token_id, row.analysis_id, row.morpheme_id]
     values += [row.is_gold and not row.is_dup and (infuse or not row.is_inf)]
     values += [form_id, lemma_id, tag_id]
@@ -46,15 +46,15 @@ def get_inf_lattices(df, vocab, max_morphemes):
 
 
 def get_lattices(df, vocab, max_morphemes, infuse):
-    feat_map = {i+1: f for i, f in enumerate(df) if f[:5] == 'feat_'}
+    max_feats_len = max(get_feats_len(df.feats.values))
     column_names = ['sent_idx', 'token_idx', 'analysis_idx', 'morpheme_idx']
     gold_column_names = ['is_gold']
     morph_column_names = ['form_id', 'lemma_id', 'tag_id']
-    feat_column_names = [feat_map[i][5:] for i in sorted(feat_map)]
+    feat_column_names = [f'feat{i+1}_id' for i in range(max_feats_len)]
     column_names += gold_column_names
     column_names += morph_column_names
     column_names += feat_column_names
-    sample_rows = [to_morpheme_row(row, vocab, feat_map, infuse) for row in df.itertuples() ]
+    sample_rows = [to_morpheme_row(row, max_feats_len, vocab, infuse) for row in df.itertuples() ]
     samples_df = pd.DataFrame(sample_rows, columns=column_names)
     num_samples = samples_df.sent_idx.max()
     max_len = samples_df.token_idx.max()
@@ -77,8 +77,8 @@ def get_lattices(df, vocab, max_morphemes, infuse):
     return samples_arr[samples_df.sent_idx.unique() - 1], analysis_length_arr[samples_df.sent_idx.unique() - 1]
 
 
-def load_inf_lattices(root_path, partition, morph_level):
-    return load_data_samples(root_path / morph_level, partition, 'lattices-inf', get_inf_lattices)
+def load_inf_lattices(root_path, partition):
+    return load_data_samples(root_path, partition, 'lattices-inf', get_inf_lattices)
 
 
 def to_token_lattice(token_lattice_ids, vocab):
@@ -94,13 +94,12 @@ def to_token_lattice(token_lattice_ids, vocab):
 
 
 def main():
-    # partition = ['dev', 'test', 'train']
-    partition = ['dev']
+    partition = ['dev', 'test', 'train']
     root_path = Path.home() / 'dev/aseker00/modi/treebank/spmrl/heb'
-    # ft_root_path = Path.home() / 'dev/aseker00/fasttext'
-    # save_lattices_vocab(root_path / 'lattice', partition)
-    # save_ft_vec(root_path / 'lattice/vocab', ft_root_path)
-    token_samples, lattice_samples, vocab = load_inf_lattices(root_path, partition, 'lattice')
+    ft_root_path = Path.home() / 'dev/aseker00/fasttext'
+    save_lattices_vocab(root_path / 'lattice', partition)
+    save_ft_vec(root_path / 'lattice/vocab', ft_root_path)
+    token_samples, lattice_samples, vocab = load_inf_lattices(root_path / 'lattice', partition)
 
 
 if __name__ == '__main__':

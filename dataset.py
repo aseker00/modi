@@ -194,6 +194,7 @@ to_tag_id_vec = np.vectorize(lambda x, vocab: vocab['tag2id'][x])
 to_feat_id_vec = np.vectorize(lambda x, vocab: vocab['feat2id'][x])
 to_token_id_vec = np.vectorize(lambda x, vocab: vocab['token2id'][x])
 get_multi_tags_len = np.vectorize(lambda x: len(x.split('-')))
+get_feats_len = np.vectorize(lambda x: len(x.split('|')))
 
 
 def tag_eval(gold_df, pred_df):
@@ -296,7 +297,7 @@ def to_tags_arr(lattice_df):
 def eval_samples(samples):
     gold_df = to_dataset([to_lattice_data(sample[0], sample[1]) for sample in samples])
     pred_df = to_dataset([to_lattice_data(sample[0], sample[2]) for sample in samples])
-    return tag_eval(gold_df, pred_df), seg_tag_eval(gold_df, pred_df)
+    return tag_eval(gold_df, pred_df)
 
 
 def seg_eval_samples(samples):
