@@ -3,7 +3,7 @@ from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import TensorDataset
 import numpy as np
 from tqdm import trange
-from model_utils import *
+from utils import *
 import seqtag_dataset as ds
 from seqtag_models import *
 from pathlib import Path

@@ -6,7 +6,7 @@ from torch.utils.data.dataset import TensorDataset
 import lattice_dataset as ds
 from lattice_models import *
 from seqtag_models import *
-from model_utils import *
+from utils import *
 from pathlib import Path
 
 root_path = Path.home() / 'dev/aseker00/modi'

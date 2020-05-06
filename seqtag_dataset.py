@@ -96,14 +96,19 @@ def get_var_samples(df, vocab, max_morphemes):
 def load_samples(root_path, partition, morph_level, seq_type):
     if morph_level == 'morpheme':
         if seq_type == 'fixed':
-            return load_data_samples(root_path / morph_level, partition, 'gold-lattices', get_fixed_samples)
+            return load_data(root_path / morph_level, partition, 'gold-lattices', get_fixed_samples)
         elif seq_type == 'var':
-            return load_data_samples(root_path / morph_level, partition, 'gold-lattices', get_var_samples)
+            return load_data(root_path / morph_level, partition, 'gold-lattices', get_var_samples)
     elif morph_level == 'morpheme-multi':
         if seq_type == 'fixed':
-            return load_data_samples(root_path / morph_level, partition, 'gold-lattices-multi', get_fixed_samples)
+            return load_data(root_path / morph_level, partition, 'gold-lattices-multi', get_fixed_samples)
         elif seq_type == 'var':
-            return load_data_samples(root_path / morph_level, partition, 'gold-lattices-multi', get_var_samples)
+            return load_data(root_path / morph_level, partition, 'gold-lattices-multi', get_var_samples)
+    elif morph_level == 'token-super':
+        if seq_type == 'fixed':
+            return load_data(root_path / morph_level, partition, 'gold-lattices-super', get_fixed_samples)
+        elif seq_type == 'var':
+            return load_data(root_path / morph_level, partition, 'gold-lattices-super', get_var_samples)
 
 
 def main():

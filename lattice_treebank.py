@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 
 
-def get_infused_lattices(df, gold_df):
+def _get_infused_lattices(df, gold_df):
     mask1_columns = ['form', 'lemma', 'tag']
     mask2_columns = ['lemma', 'tag']
     mask3_columns = ['form', 'tag']
@@ -50,7 +50,7 @@ def get_infused_lattices(df, gold_df):
     return inf_df
 
 
-def infuse(lattices, gold_lattices):
+def infuse_tb_lattices(lattices, gold_lattices):
     dataset = {}
     for partition_type in lattices:
         dataset[partition_type] = [(df, gold_df) for df, gold_df in zip(lattices[partition_type],
@@ -59,5 +59,5 @@ def infuse(lattices, gold_lattices):
     for partition_type in dataset:
         print(f'infusing {partition_type} dataset')
         for (lattice_df, gold_df) in dataset[partition_type]:
-            infused_dataset[partition_type].append(get_infused_lattices(lattice_df, gold_df))
+            infused_dataset[partition_type].append(_get_infused_lattices(lattice_df, gold_df))
     return infused_dataset

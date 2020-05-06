@@ -15,7 +15,7 @@ def split_sentences(file_path):
     return [lines[sep[0]:sep[1]] for sep in sent_sep]
 
 
-def dfs(edges, cur_node_id, next_node_id, analysis_in, analyses):
+def _dfs(edges, cur_node_id, next_node_id, analysis_in, analyses):
     node = edges[cur_node_id]
     edge = node[next_node_id]
     analysis = deepcopy(analysis_in)
@@ -25,10 +25,10 @@ def dfs(edges, cur_node_id, next_node_id, analysis_in, analyses):
         return
     next_node = edges[edge.to_node_id]
     for i in range(len(next_node)):
-        dfs(edges, edge.to_node_id, i, analysis, analyses)
+        _dfs(edges, edge.to_node_id, i, analysis, analyses)
 
 
-def parse_sent_analyses(df, column_names):
+def _parse_sent_analyses(df, column_names):
     token_analyses = {}
     edges = defaultdict(lambda: defaultdict(list))
     for row in df.itertuples():
@@ -38,12 +38,12 @@ def parse_sent_analyses(df, column_names):
         token_lattice_start_node_id = min(edges[token_id].keys())
         token_lattice_start_node = edges[token_id][token_lattice_start_node_id]
         for j in range(len(token_lattice_start_node)):
-            dfs(edges[token_id], token_lattice_start_node_id, j, [], analyses)
+            _dfs(edges[token_id], token_lattice_start_node_id, j, [], analyses)
         token_analyses[token_id] = analyses
-    return lattice_to_dataframe(token_analyses, column_names)
+    return _lattice_to_dataframe(token_analyses, column_names)
 
 
-def lattice_to_dataframe(lattice, column_names):
+def _lattice_to_dataframe(lattice, column_names):
     rows = []
     for token_id in lattice:
         for i, analyses in enumerate(lattice[token_id]):
@@ -54,35 +54,41 @@ def lattice_to_dataframe(lattice, column_names):
     return pd.DataFrame(rows, columns=column_names)
 
 
-def save_dataset(root_path, dataset, suffix):
+def save_tb_lattice_data(root_path, dataset, data_type=None):
     for partition_type in dataset:
         df = pd.concat(dataset[partition_type]).reset_index(drop=True)
-        file_path = root_path / f'{partition_type}-{suffix}.csv'
+        if data_type is not None:
+            file_path = root_path / f'{partition_type}-{data_type}.lattices.csv'
+        else:
+            file_path = root_path / f'{partition_type}.lattices.csv'
         df.to_csv(str(file_path))
 
 
-def load_dataset(root_path, partition, suffix):
+def load_tb_lattice_data(root_path, partition, data_type=None):
     dataset = {}
     for partition_type in partition:
-        print(f'loading {partition_type}-{suffix} dataset')
-        file_path = root_path / f'{partition_type}-{suffix}.csv'
+        if data_type is not None:
+            file_path = root_path / f'{partition_type}-{data_type}.lattices.csv'
+        else:
+            file_path = root_path / f'{partition_type}.lattices.csv'
+        print(f'loading {file_path}')
         df = pd.read_csv(str(file_path), index_col=0)
         lattices = {sent_id: x.reset_index(drop=True) for sent_id, x in df.groupby(df.sent_id)}
         dataset[partition_type] = [lattices[sent_id] for sent_id in sorted(lattices)]
-        print(f'{partition_type}-{suffix} data size: {len(dataset[partition_type])}')
+        print(f'{file_path} data size: {len(dataset[partition_type])}')
     return dataset
 
 
-def get_dataset(treebank):
+def get_tb_data(treebank):
     dataset = {}
     column_names = lattice_fields + ['analysis_id', 'morpheme_id']
     for partition_type in treebank:
-        lattices = [parse_sent_analyses(df, column_names) for df in treebank[partition_type]]
+        lattices = [_parse_sent_analyses(df, column_names) for df in treebank[partition_type]]
         dataset[partition_type] = lattices
     return dataset
 
 
-def assert_dataset(lattices, gold_lattices):
+def assert_treebank(lattices, gold_lattices):
     for partition_type in gold_lattices:
         for df, gold_df in zip(lattices[partition_type], gold_lattices[partition_type]):
             assert df.sent_id.unique() == gold_df.sent_id.unique()

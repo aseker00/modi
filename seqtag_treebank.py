@@ -8,7 +8,7 @@ pref_tags = ['CONJ', 'DEF', 'PREPOSITION', 'REL', 'ADVERB', 'TEMP']
 suff_tags = ['S_PRN', 'S_ANP']
 
 
-def get_morpheme_types(df):
+def _get_morpheme_types(df):
     morpheme_types = []
     tags = defaultdict(set)
     multi_host_tags = set()
@@ -41,7 +41,7 @@ def get_morpheme_types(df):
     return morpheme_types, tags, multi_host_tags
 
 
-def get_group_morpheme_type(df, lattice_fields):
+def _get_group_morpheme_type(df, lattice_fields):
     column_names = lattice_fields + ['analysis_id', 'morpheme_id', 'morpheme_type']
     sent_id = df.sent_id.unique().item()
     grouped_rows = []
@@ -71,7 +71,7 @@ def get_group_morpheme_type(df, lattice_fields):
     return pd.DataFrame(grouped_rows, columns=column_names)
 
 
-def get_group_analysis(df, lattice_fields):
+def _get_group_analysis(df, lattice_fields):
     column_names = lattice_fields + ['analysis_id', 'morpheme_id']
     sent_id = df.sent_id.unique().item()
     grouped_rows = []
@@ -97,7 +97,7 @@ def add_morpheme_type(dataset):
     total_multi_host_tags = set()
     for partition_type in dataset:
         for df in dataset[partition_type]:
-            morpheme_types, tags, multi_host_tags = get_morpheme_types(df)
+            morpheme_types, tags, multi_host_tags = _get_morpheme_types(df)
             total_tags.update(tags)
             total_multi_host_tags.update(multi_host_tags)
             df['morpheme_type'] = morpheme_types
@@ -109,7 +109,7 @@ def get_grouped_morpheme_type_dataset(dataset, lattice_fields):
     grouped_dataset = defaultdict(list)
     for partition_type in dataset:
         for df in dataset[partition_type]:
-            grouped_dataset[partition_type].append(get_group_morpheme_type(df, lattice_fields))
+            grouped_dataset[partition_type].append(_get_group_morpheme_type(df, lattice_fields))
     return grouped_dataset
 
 
@@ -117,5 +117,5 @@ def get_grouped_analysis_dataset(dataset, lattice_fields):
     grouped_dataset = defaultdict(list)
     for partition_type in dataset:
         for df in dataset[partition_type]:
-            grouped_dataset[partition_type].append(get_group_analysis(df, lattice_fields))
+            grouped_dataset[partition_type].append(_get_group_analysis(df, lattice_fields))
     return grouped_dataset

@@ -78,7 +78,7 @@ def get_lattices(df, vocab, max_morphemes, infuse):
 
 
 def load_inf_lattices(root_path, partition):
-    return load_data_samples(root_path, partition, 'lattices-inf', get_inf_lattices)
+    return load_data(root_path, partition, 'lattices-inf', get_inf_lattices)
 
 
 def to_token_lattice(token_lattice_ids, vocab):

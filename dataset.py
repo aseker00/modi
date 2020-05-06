@@ -117,7 +117,7 @@ def to_tokens_row(row, vocab, token_char_ids):
     return [[row.sent_id, row.token_id, i + 1, token_id, char_id] for i, char_id in enumerate(char_ids)]
 
 
-def get_tokens_arr(df, vocab, column_names):
+def get_tokens(df, vocab, column_names):
     token_char_ids = {}
     sample_rows = [to_tokens_row(row, vocab, token_char_ids) for row in df.itertuples()]
     samples_df = pd.DataFrame([row for sample in sample_rows for row in sample], columns=column_names)
@@ -143,7 +143,7 @@ def get_tokens_arr(df, vocab, column_names):
     return samples_arr[samples_df.sent_idx.unique() - 1], length_arr[samples_df.sent_idx.unique() - 1]
 
 
-def load_data_samples(root_path, partition, tag_type, morph_seq_func):
+def load_data(root_path, partition, tag_type, morph_seq_func):
     vocab = load_vocab(root_path / 'vocab')
     dataset = {}
     max_morphemes = {}
@@ -153,7 +153,7 @@ def load_data_samples(root_path, partition, tag_type, morph_seq_func):
         file_path = root_path / f'{partition_type}-{tag_type}.csv'
         dataset[partition_type] = pd.read_csv(str(file_path), index_col=0)
         max_morphemes[partition_type] = dataset[partition_type].morpheme_id.max() + 1
-    token_samples = {t: get_tokens_arr(dataset[t], vocab, token_column_names) for t in dataset}
+    token_samples = {t: get_tokens(dataset[t], vocab, token_column_names) for t in dataset}
     morph_samples = {t: morph_seq_func(dataset[t], vocab, max_morphemes[partition[-1]]) for t in dataset}
     return token_samples, morph_samples, vocab
 
@@ -233,13 +233,13 @@ def seg_tag_eval(gold_df, pred_df):
     return precision, recall, f1
 
 
-def to_dataset(lattices):
+def concat_data(lattices):
     for i, df in enumerate(lattices):
         df.insert(0, 'sent_id', i + 1)
     return pd.concat(lattices)
 
 
-def to_lattice_data(tokens, lattices):
+def to_data(tokens, lattices):
     column_names = ['from_node_id', 'to_node_id', 'form', 'lemma', 'tag', 'feats', 'token_id', 'token', 'analysis_id',
                     'morpheme_id']
     token_forms = lattices[:, 0, :]
@@ -285,7 +285,7 @@ def to_token_lattice(tag_ids, token_mask, vocab):
     return np.stack([token_forms, token_lemmas, token_tags, token_feats_str], axis=1)
 
 
-def to_tags_arr(lattice_df):
+def to_tags(lattice_df):
     values = [x[1].tag.values for x in lattice_df.groupby('token_id')]
     max_len = max([len(a) for a in values])
     tags_arr = np.full_like(lattice_df.tag.values, '<PAD>', shape=(len(values), max_len))
@@ -295,12 +295,12 @@ def to_tags_arr(lattice_df):
 
 
 def eval_samples(samples):
-    gold_df = to_dataset([to_lattice_data(sample[0], sample[1]) for sample in samples])
-    pred_df = to_dataset([to_lattice_data(sample[0], sample[2]) for sample in samples])
+    gold_df = concat_data([to_data(sample[0], sample[1]) for sample in samples])
+    pred_df = concat_data([to_data(sample[0], sample[2]) for sample in samples])
     return tag_eval(gold_df, pred_df)
 
 
 def seg_eval_samples(samples):
-    gold_df = to_dataset([to_lattice_data(sample[0], sample[1]) for sample in samples])
-    pred_df = to_dataset([to_lattice_data(sample[0], sample[2]) for sample in samples])
+    gold_df = concat_data([to_data(sample[0], sample[1]) for sample in samples])
+    pred_df = concat_data([to_data(sample[0], sample[2]) for sample in samples])
     return seg_tag_eval(gold_df, pred_df)
