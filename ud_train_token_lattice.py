@@ -11,10 +11,10 @@ from pathlib import Path
 import os
 
 la_name = 'tr'
-tb_name = 'imst'
+tb_name = 'IMST'
 ma_name = 'trmorph2'
 # la_name = 'he'
-# tb_name = 'htb'
+# tb_name = 'HTB'
 # ma_name = 'heblex'
 root_path = Path.home() / 'dev/aseker00/modi'
 tb_root_dir_path = root_path / 'treebank/ud'

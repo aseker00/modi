@@ -48,25 +48,6 @@ def to_token_lattice(token_lattice_ids, data_vocab):
     return np.stack([token_forms, token_lemmas, token_tags, token_feats_str], axis=1)
 
 
-# def to_token_lattice(tag_ids, token_mask, data_vocab):
-#     token_tag_ids = tag_ids[token_mask]
-#     # First tag in each token must have a value (non <XXX> tag)
-#     if np.any(token_tag_ids[:, 0] < data_vocab['tag2id']['_']):
-#         token_tag_ids[:, 0][token_tag_ids[:, 0] < data_vocab['tag2id']['_']] = data_vocab['tag2id']['_']
-#     token_tag_ids[token_tag_ids < data_vocab['tag2id']['_']] = data_vocab['tag2id']['<PAD>']
-#     token_form_ids = np.zeros_like(token_tag_ids)
-#     token_lemma_ids = np.zeros_like(token_tag_ids)
-#     token_feat_ids = np.zeros_like(token_tag_ids)
-#     token_form_ids[token_tag_ids != data_vocab['form2id']['<PAD>']] = data_vocab['form2id']['_']
-#     token_lemma_ids[token_tag_ids != data_vocab['lemma2id']['<PAD>']] = data_vocab['lemma2id']['_']
-#     token_feat_ids[token_tag_ids != data_vocab['feats2id']['<PAD>']] = data_vocab['feats2id']['_']
-#     token_forms = _to_form_vec(token_form_ids, data_vocab)
-#     token_lemmas = _to_lemma_vec(token_lemma_ids, data_vocab)
-#     token_tags = _to_tag_vec(token_tag_ids, data_vocab)
-#     token_feats_str = _feats_to_str(_to_feat_vec(token_feat_ids, data_vocab))
-#     return np.stack([token_forms, token_lemmas, token_tags, token_feats_str], axis=1)
-
-
 def to_tokens(token_ids, token_mask, vocab):
     tokens = token_ids[:, :, 0, 0][token_mask]
     return _to_token_vec(tokens, vocab)
@@ -327,10 +308,9 @@ def _get_token_samples(lattices_df, data_vocab):
             token_length_samples[tokens_samples_df.sent_idx.unique() - 1])
 
 
-def _get_lattice_analysis_samples(lattice_df, data_vocab, max_morphemes, infuse=True):
+def _get_lattice_analysis_samples(lattice_df, data_vocab, max_morphemes, max_feats_len, infuse=True):
     indices_column_names = ['sent_idx', 'token_idx', 'analysis_idx', 'morpheme_idx']
     morpheme_column_names = ['is_gold', 'form_id', 'lemma_id', 'tag_id']
-    max_feats_len = max(_get_feats_len(lattice_df.feats.values))
     feat_column_names = [f'feat{i+1}_id' for i in range(max_feats_len)]
     column_names = indices_column_names + morpheme_column_names + feat_column_names
     lattice_values = [get_lattice_data_row_values(lattice_data_row, max_feats_len, data_vocab, infuse)
@@ -472,9 +452,14 @@ def load_lattices_data_samples(root_path, partition, la_name, tb_name, ma_name):
     lattices_dataset = _load_data(data_dir, partition)
     data_vocab = load_data_vocab(root_path / root_path / la_name / tb_name / 'lattice' / ma_name / 'vocab')
     token_samples = {t: _get_token_samples(lattices_dataset[t], data_vocab) for t in lattices_dataset}
+
+    # All variable sized attributes such as the number of morpheme per analysis or number of features per morpheme
+    # must be the same across all partitions (train, dev, test) so all partition arrays are the same fixed size.
     max_morphemes = {t: lattices_dataset[t].morpheme_id.max() + 1 for t in partition}
-    morph_samples = {t: _get_lattice_analysis_samples(lattices_dataset[t], data_vocab, max_morphemes[partition[-1]])
-                     for t in lattices_dataset}
+    max_feats_len = {t: max(_get_feats_len(lattices_dataset[t].feats.values)) for t in partition}
+
+    morph_samples = {t: _get_lattice_analysis_samples(lattices_dataset[t], data_vocab, max_morphemes[partition[-1]],
+                                                      max_feats_len[partition[-1]]) for t in lattices_dataset}
     return token_samples, morph_samples, data_vocab
 
 
