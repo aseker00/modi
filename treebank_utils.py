@@ -1,13 +1,14 @@
 from collections import defaultdict
 from copy import deepcopy
 import pandas as pd
+import os
+import unicodedata
 
-
-lattice_fields = ['sent_id', 'from_node_id', 'to_node_id', 'form', 'lemma', 'tag', 'feats', 'token_id', 'token',
+_lattice_fields = ['sent_id', 'from_node_id', 'to_node_id', 'form', 'lemma', 'tag', 'feats', 'token_id', 'token',
                   'is_gold']
 
 
-def split_sentences(file_path):
+def _split_sentences(file_path):
     with open(str(file_path)) as f:
         lines = [line.strip() for line in f.readlines()]
     sent_sep_pos = [i for i in range(len(lines)) if len(lines[i]) == 0]
@@ -54,7 +55,8 @@ def _lattice_to_dataframe(lattice, column_names):
     return pd.DataFrame(rows, columns=column_names)
 
 
-def save_tb_lattice_data(root_path, dataset, data_type=None):
+def _save_data_lattices(root_path, dataset, data_type=None):
+    os.makedirs(root_path, exist_ok=True)
     for partition_type in dataset:
         df = pd.concat(dataset[partition_type]).reset_index(drop=True)
         if data_type is not None:
@@ -64,38 +66,38 @@ def save_tb_lattice_data(root_path, dataset, data_type=None):
         df.to_csv(str(file_path))
 
 
-def load_tb_lattice_data(root_path, partition, data_type=None):
+def _load_data_lattices(root_path, partition, data_type=None):
     dataset = {}
     for partition_type in partition:
         if data_type is not None:
             file_path = root_path / f'{partition_type}-{data_type}.lattices.csv'
         else:
             file_path = root_path / f'{partition_type}.lattices.csv'
-        print(f'loading {file_path}')
-        df = pd.read_csv(str(file_path), index_col=0)
+        print(f'loading {file_path.stem}')
+        df = pd.read_csv(str(file_path), index_col=0, keep_default_na=False)
         lattices = {sent_id: x.reset_index(drop=True) for sent_id, x in df.groupby(df.sent_id)}
         dataset[partition_type] = [lattices[sent_id] for sent_id in sorted(lattices)]
-        print(f'{file_path} data size: {len(dataset[partition_type])}')
+        print(f'{file_path.stem} data size: {len(dataset[partition_type])}')
     return dataset
 
 
-def get_tb_data(treebank):
+def _to_data_lattices(treebank):
     dataset = {}
-    column_names = lattice_fields + ['analysis_id', 'morpheme_id']
+    column_names = _lattice_fields + ['analysis_id', 'morpheme_id']
     for partition_type in treebank:
         lattices = [_parse_sent_analyses(df, column_names) for df in treebank[partition_type]]
         dataset[partition_type] = lattices
     return dataset
 
 
-def assert_treebank(lattices, gold_lattices):
+def _assert_data(lattices, gold_lattices):
     for partition_type in gold_lattices:
         for df, gold_df in zip(lattices[partition_type], gold_lattices[partition_type]):
             assert df.sent_id.unique() == gold_df.sent_id.unique()
             assert len(df.groupby(df.token_id)) == len(gold_df.groupby(gold_df.token_id))
 
 
-def is_token_aligned(df, gold_df):
+def _is_token_aligned(df, gold_df):
     gb = df.groupby(df.token_id)
     gold_gb = gold_df.groupby(gold_df.token_id)
     for token_id, token_df in sorted(gb):
@@ -107,7 +109,7 @@ def is_token_aligned(df, gold_df):
     return True
 
 
-def validate_lattices(lattices, gold_lattices):
+def _validate_data_lattices(lattices, gold_lattices):
     mask = {}
     for partition_type in lattices:
         align_mask = [True] * len(lattices[partition_type])
@@ -119,8 +121,18 @@ def validate_lattices(lattices, gold_lattices):
             elif len(df.groupby(df.token_id)) != len(gold_df.groupby(gold_df.token_id)):
                 print(f'sent {sent_id} token num mismatch')
                 align_mask[i] = False
-            elif not is_token_aligned(df, gold_df):
+            elif not _is_token_aligned(df, gold_df):
                 print(f'sent {sent_id} misaligned tokens')
                 align_mask[i] = False
         mask[partition_type] = align_mask
     return mask
+
+
+# https://en.wikipedia.org/wiki/Unicode_character_property
+# https://stackoverflow.com/questions/48496869/python3-remove-arabic-punctuation
+def _normalize_unicode(s):
+    return ''.join(c for c in s if not unicodedata.category(c).startswith('M'))
+
+
+def _normalize_lattice(lattice):
+    return [[_normalize_unicode(part) for part in morpheme] for morpheme in lattice]

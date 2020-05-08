@@ -151,7 +151,7 @@ def load_data(root_path, partition, tag_type, morph_seq_func):
     for partition_type in partition:
         print(f'loading {partition_type}-{tag_type} samples')
         file_path = root_path / f'{partition_type}-{tag_type}.csv'
-        dataset[partition_type] = pd.read_csv(str(file_path), index_col=0)
+        dataset[partition_type] = pd.read_csv(str(file_path), index_col=0, keep_default_na=False)
         max_morphemes[partition_type] = dataset[partition_type].morpheme_id.max() + 1
     token_samples = {t: get_tokens(dataset[t], vocab, token_column_names) for t in dataset}
     morph_samples = {t: morph_seq_func(dataset[t], vocab, max_morphemes[partition[-1]]) for t in dataset}

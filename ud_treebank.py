@@ -1,18 +1,8 @@
-from treebank_utils import *
+from treebank_utils import _split_sentences, _lattice_fields, _to_data_lattices, _save_data_lattices,\
+    _load_data_lattices, _validate_data_lattices, _normalize_lattice
 from seqtag_treebank import *
 from lattice_treebank import *
 from pathlib import Path
-import unicodedata
-
-
-# https://en.wikipedia.org/wiki/Unicode_character_property
-# https://stackoverflow.com/questions/48496869/python3-remove-arabic-punctuation
-def _normalize_unicode(s):
-    return ''.join(c for c in s if not unicodedata.category(c).startswith('M'))
-
-
-def _normalize_lattice(lattice):
-    return [[_normalize_unicode(part) for part in morpheme] for morpheme in lattice]
 
 
 def _build_ud_sample(sent_id, ud_lattice, column_names):
@@ -34,8 +24,8 @@ def _build_ud_sample(sent_id, ud_lattice, column_names):
             elif len(morpheme) == 9:
                 morpheme[0] = int(morpheme[0])
                 morpheme[1] = int(morpheme[1])
-                if 'goldId' in morpheme[7]:
-                    is_gold = True
+                # if 'goldId' in morpheme[7]:
+                #     is_gold = True
             else:
                 raise Exception(f'sent {sent_id} invalid morpheme: {morpheme}')
             morpheme_token_node_id = morpheme[1]
@@ -60,9 +50,9 @@ def _build_ud_sample(sent_id, ud_lattice, column_names):
     return pd.DataFrame(lattice, columns=column_names)
 
 
-def _load_ud_partition(lattices_file_path, column_names):
+def _load_ud_conllu_partition(lattices_file_path, column_names):
     partition = []
-    lattice_sentences = split_sentences(lattices_file_path)
+    lattice_sentences = _split_sentences(lattices_file_path)
     for i, lattice in enumerate(lattice_sentences):
         sent_id = i + 1
         lattice = [line.replace("\t\t", "\t_\t").replace("\t\t", "\t_\t").split() for line in lattice if line[0] != '#']
@@ -72,7 +62,7 @@ def _load_ud_partition(lattices_file_path, column_names):
     return partition
 
 
-def load_ud_tb_lattices(tb_path, partition, column_names, lang, la_name, tb_name, ma_name, conll_type):
+def _load_ud_conllu(tb_path, partition, column_names, lang, la_name, tb_name, ma_name, conll_type):
     treebank = {}
     for partition_type in partition:
         file_name = f'{la_name}_{tb_name}-ud-{partition_type}'.lower()
@@ -80,64 +70,72 @@ def load_ud_tb_lattices(tb_path, partition, column_names, lang, la_name, tb_name
             lattices_path = tb_path / f'conllul/UL_{lang}-{tb_name}' / f'{file_name}.{ma_name}.{conll_type}'
         else:
             lattices_path = tb_path / f'UD_{lang}-{tb_name}' / f'{file_name}.{conll_type}'
-        print(f'loading {lattices_path} treebank file')
-        lattices = _load_ud_partition(lattices_path, column_names)
+        print(f'loading {lattices_path.stem} treebank file')
+        lattices = _load_ud_conllu_partition(lattices_path, column_names)
         print(f'{partition_type} lattices: {len(lattices)}')
         treebank[partition_type] = lattices
     return treebank
 
 
-def save_gold_tb_data(tb_path, root_path, partition, lang, la_name, tb_name, ma_name):
-    gold_lattices = load_ud_tb_lattices(tb_path, partition, lattice_fields, lang, la_name, tb_name, ma_name, 'conllu')
-    gold_dataset = get_tb_data(gold_lattices)
-    save_tb_lattice_data(root_path / la_name / tb_name, gold_dataset, 'gold')
-
-
-def save_uninfused_lattices_tb_data(tb_path, root_path, partition, lang, la_name, tb_name, ma_name):
-    lattices = load_ud_tb_lattices(tb_path, partition, lattice_fields, lang, la_name, tb_name, ma_name, 'conllul')
-    dataset = get_tb_data(lattices)
-    gold_dataset = load_tb_lattice_data(root_path / la_name / tb_name, partition, 'gold')
-    valid_sent_mask = validate_lattices(dataset, gold_dataset)
-    if any([any(valid_sent_mask[t]) for t in partition]):
-        for partition_type in partition:
-            dataset[partition_type] = [d for d, m in zip(dataset[partition_type], valid_sent_mask[partition_type]) if m]
-            gold_dataset[partition_type] = [d for d, m in zip(gold_dataset[partition_type], valid_sent_mask[partition_type]) if m]
-        save_tb_lattice_data(root_path / la_name / tb_name / 'lattice' / ma_name, gold_dataset, 'gold')
-        save_tb_lattice_data(root_path / la_name / tb_name / 'lattice' / ma_name, dataset, 'uninf')
-    else:
-        save_tb_lattice_data(root_path / la_name / tb_name / 'lattice' / ma_name, dataset, 'uninf')
-
-
-def _load_gold_tb_data(root_path, partition, la_name, tb_name, ma_name):
+def _load_gold_data_lattices(root_path, partition, la_name, tb_name, ma_name):
     try:
-        gold_dataset = load_tb_lattice_data(root_path / la_name / tb_name / 'lattice' / ma_name, partition, 'gold')
+        gold_dataset = _load_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, partition, 'gold')
     except FileNotFoundError:
-        gold_dataset = load_tb_lattice_data(root_path / la_name / tb_name, partition, 'gold')
+        gold_dataset = _load_data_lattices(root_path / la_name / tb_name, partition, 'gold')
     return gold_dataset
 
 
-def save_infused_lattices_tb_data(root_path, partition, la_name, tb_name, ma_name):
-    dataset, gold_dataset = load_uninfused_lattices_tb_data(root_path, partition, la_name, tb_name, ma_name)
-    infused_dataset = infuse_tb_lattices(dataset, gold_dataset)
-    save_tb_lattice_data(root_path / la_name / tb_name / 'lattice' / ma_name, infused_dataset)
+def _save_gold(tb_path, root_path, partition, lang, la_name, tb_name, ma_name):
+    gold_lattices = _load_ud_conllu(tb_path, partition, _lattice_fields, lang, la_name, tb_name, ma_name, 'conllu')
+    gold_dataset = _to_data_lattices(gold_lattices)
+    _save_data_lattices(root_path / la_name / tb_name, gold_dataset, 'gold')
 
 
-def save_gold_token_super_tag_tb_data(root_path, partition, la_name, tb_name):
-    gold_dataset = load_tb_lattice_data(root_path / la_name / tb_name, partition, 'gold')
-    grouped_gold_dataset = get_grouped_analysis_dataset(gold_dataset, lattice_fields)
-    save_tb_lattice_data(root_path / la_name / tb_name / 'seq' / 'token-super-tag', grouped_gold_dataset, 'gold-super')
+def _save_uninfused_lattices(tb_path, root_path, partition, lang, la_name, tb_name, ma_name):
+    lattices = _load_ud_conllu(tb_path, partition, _lattice_fields, lang, la_name, tb_name, ma_name, 'conllul')
+    lattices_dataset = _to_data_lattices(lattices)
+    gold_dataset = _load_data_lattices(root_path / la_name / tb_name, partition, 'gold')
+    valid_sent_mask = _validate_data_lattices(lattices_dataset, gold_dataset)
+    if any([not any(valid_sent_mask[t]) for t in partition]):
+        for partition_type in partition:
+            lattices_dataset[partition_type] = [d for d, m in zip(lattices_dataset[partition_type], valid_sent_mask[partition_type]) if m]
+            gold_dataset[partition_type] = [d for d, m in zip(gold_dataset[partition_type], valid_sent_mask[partition_type]) if m]
+        _save_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, gold_dataset, 'gold')
+        _save_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, lattices_dataset, 'uninf')
+    else:
+        _save_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, lattices_dataset, 'uninf')
 
 
-def load_infused_lattices_tb_data(root_path, partition, la_name, tb_name, ma_name):
-    gold_dataset = _load_gold_tb_data(root_path, partition, la_name, tb_name, ma_name)
-    infused_dataset = load_tb_lattice_data(root_path / la_name / tb_name / 'lattice' / ma_name, partition)
-    return infused_dataset, gold_dataset
+def _save_infused_lattices(root_path, partition, la_name, tb_name, ma_name):
+    lattices_dataset, gold_dataset = load_uninfused_lattices(root_path, partition, la_name, tb_name, ma_name)
+    infused_lattices_dataset = infuse_tb_lattices(lattices_dataset, gold_dataset)
+    _save_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, infused_lattices_dataset)
 
 
-def load_uninfused_lattices_tb_data(root_path, partition, la_name, tb_name, ma_name):
-    gold_dataset = _load_gold_tb_data(root_path, partition, la_name, tb_name, ma_name)
-    dataset = load_tb_lattice_data(root_path / la_name / tb_name / 'lattice' / ma_name, partition, 'uninf')
-    return dataset, gold_dataset
+def _save_gold_token_super_tag(root_path, partition, la_name, tb_name):
+    gold_dataset = _load_data_lattices(root_path / la_name / tb_name, partition, 'gold')
+    grouped_gold_dataset = get_grouped_analysis_dataset(gold_dataset, _lattice_fields)
+    _save_data_lattices(root_path / la_name / tb_name / 'seq' / 'token-super-tag', grouped_gold_dataset, 'gold-super')
+
+
+def load_gold(root_path, partition, la_name, tb_name):
+    return _load_data_lattices(root_path / la_name / tb_name, partition, 'gold')
+
+
+def load_gold_token_super_tag(root_path, partition, la_name, tb_name):
+    return _load_data_lattices(root_path / la_name / tb_name / 'seq' / 'token-super-tag', partition, 'gold-super')
+
+
+def load_infused_lattices(root_path, partition, la_name, tb_name, ma_name):
+    gold_dataset = _load_gold_data_lattices(root_path, partition, la_name, tb_name, ma_name)
+    infused_lattices_dataset = _load_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, partition)
+    return infused_lattices_dataset, gold_dataset
+
+
+def load_uninfused_lattices(root_path, partition, la_name, tb_name, ma_name):
+    gold_dataset = _load_gold_data_lattices(root_path, partition, la_name, tb_name, ma_name)
+    lattices_dataset = _load_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, partition, 'uninf')
+    return lattices_dataset, gold_dataset
 
 
 def main():
@@ -151,10 +149,10 @@ def main():
         lang = langs[la_name]
         tb_name = tb_names[la_name]
         ma_name = ma_names[la_name]
-        save_gold_tb_data(tb_path, root_path, partition, lang, la_name, tb_name, ma_name)
-        save_uninfused_lattices_tb_data(tb_path, root_path, partition, lang, la_name, tb_name, ma_name)
-        save_infused_lattices_tb_data(root_path, partition, la_name, tb_name, ma_name)
-        save_gold_token_super_tag_tb_data(root_path, partition, la_name, tb_name)
+        _save_gold(tb_path, root_path, partition, lang, la_name, tb_name, ma_name)
+        _save_uninfused_lattices(tb_path, root_path, partition, lang, la_name, tb_name, ma_name)
+        _save_infused_lattices(root_path, partition, la_name, tb_name, ma_name)
+        _save_gold_token_super_tag(root_path, partition, la_name, tb_name)
 
 
 if __name__ == '__main__':
