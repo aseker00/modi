@@ -10,14 +10,16 @@ from utils import *
 from pathlib import Path
 import os
 
+
+scheme = 'UD'
+# scheme = 'SPMRL'
 la_name = 'tr'
 tb_name = 'IMST'
 ma_name = 'trmorph2'
 # la_name = 'he'
 # tb_name = 'HTB'
+# tb_name = 'HEBTB'
 # ma_name = 'heblex'
-scheme = 'UD'
-# scheme = 'SPMRL'
 root_path = Path.home() / 'dev/aseker00/modi'
 tb_root_dir_path = root_path / 'tb' / scheme
 data_dir_path = root_path / 'data' / scheme / la_name / tb_name / 'lattice' / ma_name
@@ -35,7 +37,7 @@ if all([path.exists() for path in [dev_set_path, test_set_path, train_set_path]]
     dev_set = torch.load(str(dev_set_path))
     test_set = torch.load(str(test_set_path))
     train_set = torch.load(str(train_set_path))
-    data_vocab = ds.load_lattices_vocab(root_path, la_name, tb_name, ma_name)
+    data_vocab = ds.load_lattices_vocab(tb_root_dir_path, la_name, tb_name, ma_name)
 else:
     os.makedirs(str(data_dir_path), exist_ok=True)
     partition = ['dev', 'test', 'train']

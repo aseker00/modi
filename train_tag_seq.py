@@ -9,13 +9,13 @@ from pathlib import Path
 import os
 
 
+scheme = 'UD'
+# scheme = 'SPMRL'
 la_name = 'tr'
 tb_name = 'IMST'
 # la_name = 'he'
 # tb_name = 'HTB'
 # tb_name = 'HEBTB'
-scheme = 'UD'
-# scheme = 'SPMRL'
 root_path = Path.home() / 'dev/aseker00/modi'
 tb_root_dir_path = root_path / 'tb' / scheme
 data_dir_path = root_path / 'data' /scheme / la_name / tb_name
