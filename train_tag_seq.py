@@ -3,34 +3,44 @@ from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import TensorDataset
 from tqdm import trange
 from utils import *
-import seqtag_dataset as ds
-from seqtag_models import *
+import dataset as ds
+from tag_models import *
 from pathlib import Path
+import os
 
 
+la_name = 'tr'
+tb_name = 'IMST'
+# la_name = 'he'
+# tb_name = 'HTB'
+# tb_name = 'HEBTB'
+scheme = 'UD'
+# scheme = 'SPMRL'
 root_path = Path.home() / 'dev/aseker00/modi'
-tb_path = root_path / 'treebank/spmrl/heb'
-data_path = root_path / 'data/spmrl/heb'
+tb_root_dir_path = root_path / 'tb' / scheme
+data_dir_path = root_path / 'data' /scheme / la_name / tb_name
+
 ft_root_path = Path.home() / 'dev/aseker00/fasttext'
-seq_type = 'morpheme'
-dev_set_path = data_path / seq_type / 'dev.pth'
-test_set_path = data_path / seq_type / 'test.pth'
-train_set_path = data_path / seq_type / 'train.pth'
-char_ft_emb_path = data_path / 'char-ft-emb.pth'
-token_ft_emb_path = data_path / 'token-ft-emb.pth'
-vocab_path = tb_path / seq_type / 'vocab'
+dev_set_path = data_dir_path / 'dev-inf.pth'
+test_set_path = data_dir_path / 'test-inf.pth'
+train_set_path = data_dir_path / 'train-inf.pth'
+char_ft_emb_path = data_dir_path / 'char-ft-emb.pth'
+token_ft_emb_path = data_dir_path / 'token-ft-emb.pth'
+form_ft_emb_path = data_dir_path / 'form-ft-emb.pth'
+lemma_ft_emb_path = data_dir_path / 'lemma-ft-emb.pth'
 
 if all([path.exists() for path in [dev_set_path, test_set_path, train_set_path]]):
     dev_set = torch.load(str(dev_set_path))
     test_set = torch.load(str(test_set_path))
     train_set = torch.load(str(train_set_path))
-    vocab = ds.load_vocab(vocab_path)
+    data_vocab = ds.load_gold_vocab(tb_root_dir_path, la_name, tb_name)
 else:
+    os.makedirs(str(data_dir_path), exist_ok=True)
     partition = ['dev', 'test', 'train']
-    token_arr, morph_arr, vocab = ds.load_samples(tb_path, partition, seq_type, 'var')
-    token_lengths = {t: torch.tensor(token_arr[t][1], dtype=torch.long) for t in token_arr}
-    token_samples = {t: torch.tensor(token_arr[t][0], dtype=torch.long) for t in token_arr}
-    morph_samples = {t: torch.tensor(morph_arr[t], dtype=torch.long) for t in morph_arr}
+    token_samples, morph_samples, data_vocab = ds.load_gold_data_samples(tb_root_dir_path, partition, la_name, tb_name)
+    token_lengths = {t: torch.tensor(token_samples[t][1], dtype=torch.long) for t in token_samples}
+    token_samples = {t: torch.tensor(token_samples[t][0], dtype=torch.long) for t in token_samples}
+    morph_samples = {t: torch.tensor(morph_samples[t], dtype=torch.long) for t in morph_samples}
     dev_set = TensorDataset(*[s['dev'] for s in [token_samples, token_lengths, morph_samples]])
     test_set = TensorDataset(*[s['test'] for s in [token_samples, token_lengths, morph_samples]])
     train_set = TensorDataset(*[s['train'] for s in [token_samples, token_lengths, morph_samples]])
@@ -42,7 +52,8 @@ if all([path.exists() for path in [char_ft_emb_path, token_ft_emb_path]]):
     char_ft_emb = torch.load(char_ft_emb_path)
     token_ft_emb = torch.load(token_ft_emb_path)
 else:
-    char_ft_emb, token_ft_emb, _, _ = ds.load_ft_vec(vocab_path, ft_root_path, vocab)
+    os.makedirs(str(data_dir_path), exist_ok=True)
+    char_ft_emb, token_ft_emb = ds.load_gold_ft_emb(tb_root_dir_path, ft_root_path, data_vocab, la_name, tb_name)
     torch.save(char_ft_emb, str(char_ft_emb_path))
     torch.save(token_ft_emb, str(token_ft_emb_path))
 
@@ -51,19 +62,29 @@ dev_data = DataLoader(dev_set, batch_size=1)
 test_data = DataLoader(test_set, batch_size=1)
 
 device = None
-num_tags = len(vocab['tags'])
+num_tags = len(data_vocab['tags'])
 max_tag_seq_len = train_set.tensors[-1].shape[2]
 tag_emb = nn.Embedding(num_embeddings=num_tags, embedding_dim=100, padding_idx=0)
 token_char_emb = TokenCharEmbedding(token_ft_emb, char_ft_emb, 50)
 token_encoder = nn.LSTM(input_size=token_char_emb.embedding_dim, hidden_size=300, num_layers=1, bidirectional=True,
                         batch_first=True, dropout=0.0)
 tag_decoder = SequenceStepDecoder(token_char_emb.embedding_dim + tag_emb.embedding_dim, token_encoder.hidden_size * 2, 1, 0.0, num_tags)
-sos = torch.tensor([vocab['tag2id']['<SOS>']], dtype=torch.long, device=device)
-eot = torch.tensor([vocab['tag2id']['<EOT>']], dtype=torch.long, device=device)
+sos = torch.tensor([data_vocab['tag2id']['<SOS>']], dtype=torch.long, device=device)
+eot = torch.tensor([data_vocab['tag2id']['<EOT>']], dtype=torch.long, device=device)
 s2s = Seq2SeqClassifier(token_char_emb, token_encoder, tag_emb, tag_decoder, max_tag_seq_len, sos, eot)
 if device is not None:
     s2s.to(device)
 print(s2s)
+
+
+def to_token_lattice(tag_ids, token_mask):
+    if scheme == 'UD':
+        return ds.tag_ids_to_ud_lattice(tag_ids, token_mask, data_vocab)
+    return ds.tag_ids_to_spmrl_lattice(tag_ids, token_mask, data_vocab)
+
+
+def to_tokens(token_ids, token_mask):
+    return ds.token_ids_to_tokens(token_ids, token_mask, data_vocab)
 
 
 def run_data(epoch, phase, data, print_every, model, optimizer=None):
@@ -86,9 +107,9 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
         b_token_mask = b_token_mask.cpu().numpy()
         b_gold_tag_ids = b_gold_tag_ids.cpu().numpy()
         b_pred_tag_ids = b_pred_tag_ids.cpu().numpy()
-        gold_tokens = ds.to_tokens(b_token_ids, b_token_mask, vocab)
-        gold_token_lattice = ds.to_token_lattice(b_gold_tag_ids, b_token_mask, vocab)
-        pred_token_lattice = ds.to_token_lattice(b_pred_tag_ids, b_token_mask, vocab)
+        gold_tokens = to_tokens(b_token_ids, b_token_mask)
+        gold_token_lattice = to_token_lattice(b_gold_tag_ids, b_token_mask)
+        pred_token_lattice = to_token_lattice(b_pred_tag_ids, b_token_mask)
         print_samples.append((gold_tokens, gold_token_lattice, pred_token_lattice))
         total_samples.append((gold_tokens, gold_token_lattice, pred_token_lattice))
         if optimizer is not None:
@@ -115,7 +136,7 @@ epochs = 3
 for i in trange(epochs, desc="Epoch"):
     epoch = i + 1
     s2s.train()
-    run_data(epoch, 'train', train_data, 32, s2s, adam)
+    run_data(epoch, 'train', train_data, 320, s2s, adam)
     s2s.eval()
     with torch.no_grad():
         run_data(epoch, 'dev', dev_data, 32, s2s)

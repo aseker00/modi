@@ -3,9 +3,9 @@ from tqdm import trange
 from torch.optim.adamw import AdamW
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import TensorDataset
-import ud_dataset as ds
+import dataset as ds
 from lattice_models import *
-from seqtag_models import *
+from tag_models import *
 from utils import *
 from pathlib import Path
 import os
@@ -16,9 +16,11 @@ ma_name = 'trmorph2'
 # la_name = 'he'
 # tb_name = 'HTB'
 # ma_name = 'heblex'
+scheme = 'UD'
+# scheme = 'SPMRL'
 root_path = Path.home() / 'dev/aseker00/modi'
-tb_root_dir_path = root_path / 'treebank/ud'
-data_dir_path = root_path / 'data/ud' / la_name / tb_name / 'lattice' / ma_name
+tb_root_dir_path = root_path / 'tb' / scheme
+data_dir_path = root_path / 'data' / scheme / la_name / tb_name / 'lattice' / ma_name
 
 ft_root_path = Path.home() / 'dev/aseker00/fasttext'
 dev_set_path = data_dir_path / 'dev-inf.pth'
@@ -28,25 +30,23 @@ char_ft_emb_path = data_dir_path / 'char-ft-emb.pth'
 token_ft_emb_path = data_dir_path / 'token-ft-emb.pth'
 form_ft_emb_path = data_dir_path / 'form-ft-emb.pth'
 lemma_ft_emb_path = data_dir_path / 'lemma-ft-emb.pth'
-vocab_dir_path = tb_root_dir_path / la_name / tb_name / 'lattice' / ma_name / 'vocab'
 
 if all([path.exists() for path in [dev_set_path, test_set_path, train_set_path]]):
     dev_set = torch.load(str(dev_set_path))
     test_set = torch.load(str(test_set_path))
     train_set = torch.load(str(train_set_path))
-    data_vocab = ds.load_data_vocab(vocab_dir_path)
+    data_vocab = ds.load_lattices_vocab(root_path, la_name, tb_name, ma_name)
 else:
     os.makedirs(str(data_dir_path), exist_ok=True)
     partition = ['dev', 'test', 'train']
-    token_samples, lattice_samples, data_vocab = ds.load_lattices_data_samples(tb_root_dir_path, partition, la_name,
-                                                                               tb_name, ma_name)
+    token_samples, morph_samples, data_vocab = ds.load_lattices_data_samples(tb_root_dir_path, partition, la_name, tb_name, ma_name)
     token_lengths = {t: torch.tensor(token_samples[t][1], dtype=torch.long) for t in token_samples}
-    analysis_lengths = {t: torch.tensor(lattice_samples[t][1], dtype=torch.long) for t in lattice_samples}
+    analysis_lengths = {t: torch.tensor(morph_samples[t][1], dtype=torch.long) for t in morph_samples}
     token_samples = {t: torch.tensor(token_samples[t][0], dtype=torch.long) for t in token_samples}
-    lattice_samples = {t: torch.tensor(lattice_samples[t][0], dtype=torch.long) for t in lattice_samples}
-    dev_set = TensorDataset(*[s['dev'] for s in [token_samples, token_lengths, lattice_samples, analysis_lengths]])
-    test_set = TensorDataset(*[s['test'] for s in [token_samples, token_lengths, lattice_samples, analysis_lengths]])
-    train_set = TensorDataset(*[s['train'] for s in [token_samples, token_lengths, lattice_samples, analysis_lengths]])
+    morph_samples = {t: torch.tensor(morph_samples[t][0], dtype=torch.long) for t in morph_samples}
+    dev_set = TensorDataset(*[s['dev'] for s in [token_samples, token_lengths, morph_samples, analysis_lengths]])
+    test_set = TensorDataset(*[s['test'] for s in [token_samples, token_lengths, morph_samples, analysis_lengths]])
+    train_set = TensorDataset(*[s['train'] for s in [token_samples, token_lengths, morph_samples, analysis_lengths]])
     torch.save(dev_set, str(dev_set_path))
     torch.save(test_set, str(test_set_path))
     torch.save(train_set, str(train_set_path))
@@ -57,9 +57,8 @@ if all([path.exists() for path in [char_ft_emb_path, token_ft_emb_path, form_ft_
     form_ft_emb = torch.load(form_ft_emb_path)
     lemma_ft_emb = torch.load(lemma_ft_emb_path)
 else:
-    os.makedirs(str(vocab_dir_path), exist_ok=True)
-    char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = ds.load_data_ft_vec(vocab_dir_path, ft_root_path,
-                                                                               data_vocab, la_name)
+    os.makedirs(str(data_dir_path), exist_ok=True)
+    char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = ds.load_lattice_ft_emb(tb_root_dir_path, ft_root_path, data_vocab, la_name, tb_name, ma_name)
     torch.save(char_ft_emb, str(char_ft_emb_path))
     torch.save(token_ft_emb, str(token_ft_emb_path))
     torch.save(form_ft_emb, str(form_ft_emb_path))
@@ -112,7 +111,9 @@ def pack_lattice(lattice_ids, mask, indices):
 
 def to_token_lattice(lattice_ids, token_mask, analysis_indices):
     token_lattice_ids = pack_lattice(lattice_ids, token_mask, analysis_indices)
-    return ds.to_token_lattice(token_lattice_ids.cpu().numpy(), data_vocab)
+    if scheme == 'UD':
+        return ds.lattice_ids_to_ud_lattice(token_lattice_ids.cpu().numpy(), data_vocab)
+    return ds.lattice_ids_to_spmrl_lattice(token_lattice_ids.cpu().numpy(), data_vocab)
 
 
 def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_forcing=None):
@@ -148,7 +149,7 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
         b_pred_indices = model.decode(b_scores)
         b_token_ids = b_token_ids.cpu().numpy()
         # b_token_mask = b_token_mask.cpu().numpy()
-        gold_tokens = ds.to_tokens(b_token_ids, b_token_mask.cpu().numpy(), data_vocab)
+        gold_tokens = ds.token_ids_to_tokens(b_token_ids, b_token_mask.cpu().numpy(), data_vocab)
         # b_lattice = b_lattice.cpu().numpy()
         # b_gold_indices = b_gold_indices.cpu().numpy()
         # b_pred_indices = b_pred_indices.cpu().numpy()
@@ -181,8 +182,8 @@ epochs = 3
 for i in trange(epochs, desc="Epoch"):
     epoch = i + 1
     ptrnet.train()
-    run_data(epoch, 'train', train_data, 10, ptrnet, adam, 1.0)
+    run_data(epoch, 'train', train_data, 320, ptrnet, adam, 1.0)
     ptrnet.eval()
     with torch.no_grad():
-        run_data(epoch, 'dev-inf', dev_data, 10, ptrnet)
-        run_data(epoch, 'test-inf', test_data, 10, ptrnet)
+        run_data(epoch, 'dev-inf', dev_data, 32, ptrnet)
+        run_data(epoch, 'test-inf', test_data, 32, ptrnet)
