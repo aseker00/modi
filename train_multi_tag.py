@@ -10,20 +10,25 @@ from pathlib import Path
 import os
 
 
-scheme = 'UD'
-# scheme = 'SPMRL'
+# scheme = 'UD'
+scheme = 'SPMRL'
 la_name = 'he'
-tb_name = 'HTB'
-# tb_name = 'HEBTB'
 # la_name = 'tr'
-# tb_name = 'IMST'
-multi_tag_level = 'token'
-# multi_tag_level = 'morpheme-type'
-root_path = Path.home() / 'dev/aseker00/modi'
-tb_root_dir_path = root_path / 'tb' / scheme
-data_dir_path = root_path / 'data' / scheme / la_name / tb_name / 'seq' / f'{multi_tag_level}-multi-tag'
+if la_name == 'he':
+    if scheme == 'UD':
+        tb_name = 'HTB'
+    else:
+        tb_name = 'HEBTB'
+else:
+    tb_name = 'IMST'
+# multi_tag_level = 'token'
+multi_tag_level = 'morpheme-type'
 
-ft_root_path = Path.home() / 'dev/aseker00/fasttext'
+root_dir_path = Path.home() / 'dev/aseker00/modi'
+ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
+tb_root_dir_path = root_dir_path / 'tb' / scheme
+data_dir_path = root_dir_path / 'data' / scheme / la_name / tb_name / 'seq' / f'{multi_tag_level}-multi-tag'
+
 dev_set_path = data_dir_path / 'dev-inf.pth'
 test_set_path = data_dir_path / 'test-inf.pth'
 train_set_path = data_dir_path / 'train-inf.pth'
@@ -62,7 +67,7 @@ if all([path.exists() for path in [char_ft_emb_path, token_ft_emb_path]]):
     token_ft_emb = torch.load(token_ft_emb_path)
 else:
     os.makedirs(str(data_dir_path), exist_ok=True)
-    char_ft_emb, token_ft_emb = ds.load_gold_multi_ft_emb(tb_root_dir_path, ft_root_path, data_vocab, la_name, tb_name, multi_tag_level)
+    char_ft_emb, token_ft_emb = ds.load_gold_multi_ft_emb(tb_root_dir_path, ft_root_dir_path, data_vocab, la_name, tb_name, multi_tag_level)
     torch.save(char_ft_emb, str(char_ft_emb_path))
     torch.save(token_ft_emb, str(token_ft_emb_path))
 
@@ -81,7 +86,6 @@ tagger = FixedSequenceClassifier(token_char_emb, token_encoder, 0.0, max_tag_seq
 if device is not None:
     tagger.to(device)
 print(tagger)
-
 
 
 def to_token_lattice(tag_ids, token_mask):
@@ -140,10 +144,10 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
         print_loss += sum(b_losses)
         total_loss += sum(b_losses)
         b_pred_multi_tag_ids = model.decode(b_scores)
-        b_token_ids = b_token_ids.cpu().numpy()
-        b_token_mask = b_token_mask.cpu().numpy()
-        b_gold_multi_tag_ids = b_gold_multi_tag_ids.cpu().numpy()
-        b_pred_multi_tag_ids = b_pred_multi_tag_ids.cpu().numpy()
+        b_token_ids = b_token_ids.cpu().clone().detach().numpy()
+        b_token_mask = b_token_mask.cpu().clone().detach().numpy()
+        b_gold_multi_tag_ids = b_gold_multi_tag_ids.cpu().clone().detach().numpy()
+        b_pred_multi_tag_ids = b_pred_multi_tag_ids.cpu().clone().detach().numpy()
         gold_tokens = to_tokens(b_token_ids, b_token_mask)
         max_token_tags_num = get_num_token_tags(b_gold_multi_tag_ids)
         max_token_tags_num = max(max_token_tags_num, get_num_token_tags(b_pred_multi_tag_ids))
@@ -172,7 +176,7 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
 # torch.autograd.set_detect_anomaly(True)
 lr = 1e-3
 adam = AdamW(tagger.parameters(), lr=lr)
-adam = ModelOptimizer(1, adam, tagger.parameters(), 0.0)
+adam = ModelOptimizer(1, adam, list(tagger.parameters()), 0.0)
 epochs = 3
 for i in trange(epochs, desc="Epoch"):
     epoch = i + 1

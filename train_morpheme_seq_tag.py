@@ -11,16 +11,21 @@ import os
 
 scheme = 'UD'
 # scheme = 'SPMRL'
-la_name = 'tr'
-tb_name = 'IMST'
-# la_name = 'he'
-# tb_name = 'HTB'
-# tb_name = 'HEBTB'
-root_path = Path.home() / 'dev/aseker00/modi'
-tb_root_dir_path = root_path / 'tb' / scheme
-data_dir_path = root_path / 'data' /scheme / la_name / tb_name
+la_name = 'he'
+# la_name = 'tr'
+if la_name == 'he':
+    if scheme == 'UD':
+        tb_name = 'HTB'
+    else:
+        tb_name = 'HEBTB'
+else:
+    tb_name = 'IMST'
 
-ft_root_path = Path.home() / 'dev/aseker00/fasttext'
+root_dir_path = Path.home() / 'dev/aseker00/modi'
+ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
+tb_root_dir_path = root_dir_path / 'tb' / scheme
+data_dir_path = root_dir_path / 'data' /scheme / la_name / tb_name
+
 dev_set_path = data_dir_path / 'dev-inf.pth'
 test_set_path = data_dir_path / 'test-inf.pth'
 train_set_path = data_dir_path / 'train-inf.pth'
@@ -53,7 +58,7 @@ if all([path.exists() for path in [char_ft_emb_path, token_ft_emb_path]]):
     token_ft_emb = torch.load(token_ft_emb_path)
 else:
     os.makedirs(str(data_dir_path), exist_ok=True)
-    char_ft_emb, token_ft_emb = ds.load_gold_ft_emb(tb_root_dir_path, ft_root_path, data_vocab, la_name, tb_name)
+    char_ft_emb, token_ft_emb = ds.load_gold_ft_emb(tb_root_dir_path, ft_root_dir_path, data_vocab, la_name, tb_name)
     torch.save(char_ft_emb, str(char_ft_emb_path))
     torch.save(token_ft_emb, str(token_ft_emb_path))
 
@@ -103,10 +108,10 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
         print_loss += b_loss
         total_loss += b_loss
         b_pred_tag_ids = model.decode(b_scores)
-        b_token_ids = b_token_ids.cpu().numpy()
-        b_token_mask = b_token_mask.cpu().numpy()
-        b_gold_tag_ids = b_gold_tag_ids.cpu().numpy()
-        b_pred_tag_ids = b_pred_tag_ids.cpu().numpy()
+        b_token_ids = b_token_ids.cpu().clone().detach().numpy()
+        b_token_mask = b_token_mask.cpu().clone().detach().numpy()
+        b_gold_tag_ids = b_gold_tag_ids.cpu().clone().detach().numpy()
+        b_pred_tag_ids = b_pred_tag_ids.cpu().clone().detach().numpy()
         gold_tokens = to_tokens(b_token_ids, b_token_mask)
         gold_token_lattice = to_token_lattice(b_gold_tag_ids, b_token_mask)
         pred_token_lattice = to_token_lattice(b_pred_tag_ids, b_token_mask)
@@ -131,7 +136,7 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
 # torch.autograd.set_detect_anomaly(True)
 lr = 1e-3
 adam = AdamW(s2s.parameters(), lr=lr)
-adam = ModelOptimizer(1, adam, s2s.parameters(), 0.0)
+adam = ModelOptimizer(1, adam, list(s2s.parameters()), 0.0)
 epochs = 3
 for i in trange(epochs, desc="Epoch"):
     epoch = i + 1

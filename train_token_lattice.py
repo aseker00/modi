@@ -13,18 +13,23 @@ import os
 
 scheme = 'UD'
 # scheme = 'SPMRL'
-la_name = 'tr'
-tb_name = 'IMST'
-ma_name = 'trmorph2'
-# la_name = 'he'
-# tb_name = 'HTB'
-# tb_name = 'HEBTB'
-# ma_name = 'heblex'
-root_path = Path.home() / 'dev/aseker00/modi'
-tb_root_dir_path = root_path / 'tb' / scheme
-data_dir_path = root_path / 'data' / scheme / la_name / tb_name / 'lattice' / ma_name
+la_name = 'he'
+# la_name = 'tr'
+if la_name == 'he':
+    if scheme == 'UD':
+        tb_name = 'HTB'
+    else:
+        tb_name = 'HEBTB'
+    ma_name = 'heblex'
+else:
+    tb_name = 'IMST'
+    ma_name = 'trmorph2'
 
-ft_root_path = Path.home() / 'dev/aseker00/fasttext'
+root_dir_path = Path.home() / 'dev/aseker00/modi'
+ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
+tb_root_dir_path = root_dir_path / 'tb' / scheme
+data_dir_path = root_dir_path / 'data' / scheme / la_name / tb_name / 'lattice' / ma_name
+
 dev_set_path = data_dir_path / 'dev-inf.pth'
 test_set_path = data_dir_path / 'test-inf.pth'
 train_set_path = data_dir_path / 'train-inf.pth'
@@ -60,7 +65,7 @@ if all([path.exists() for path in [char_ft_emb_path, token_ft_emb_path, form_ft_
     lemma_ft_emb = torch.load(lemma_ft_emb_path)
 else:
     os.makedirs(str(data_dir_path), exist_ok=True)
-    char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = ds.load_lattice_ft_emb(tb_root_dir_path, ft_root_path, data_vocab, la_name, tb_name, ma_name)
+    char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = ds.load_lattice_ft_emb(tb_root_dir_path, ft_root_dir_path, data_vocab, la_name, tb_name, ma_name)
     torch.save(char_ft_emb, str(char_ft_emb_path))
     torch.save(token_ft_emb, str(token_ft_emb_path))
     torch.save(form_ft_emb, str(form_ft_emb_path))
@@ -114,8 +119,8 @@ def pack_lattice(lattice_ids, mask, indices):
 def to_token_lattice(lattice_ids, token_mask, analysis_indices):
     token_lattice_ids = pack_lattice(lattice_ids, token_mask, analysis_indices)
     if scheme == 'UD':
-        return ds.lattice_ids_to_ud_lattice(token_lattice_ids.cpu().numpy(), data_vocab)
-    return ds.lattice_ids_to_spmrl_lattice(token_lattice_ids.cpu().numpy(), data_vocab)
+        return ds.lattice_ids_to_ud_lattice(token_lattice_ids.cpu().clone().detach().numpy(), data_vocab)
+    return ds.lattice_ids_to_spmrl_lattice(token_lattice_ids.cpu().clone().detach().numpy(), data_vocab)
 
 
 def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_forcing=None):
@@ -149,12 +154,12 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
         print_loss += b_loss
         total_loss += b_loss
         b_pred_indices = model.decode(b_scores)
-        b_token_ids = b_token_ids.cpu().numpy()
-        # b_token_mask = b_token_mask.cpu().numpy()
-        gold_tokens = ds.token_ids_to_tokens(b_token_ids, b_token_mask.cpu().numpy(), data_vocab)
-        # b_lattice = b_lattice.cpu().numpy()
-        # b_gold_indices = b_gold_indices.cpu().numpy()
-        # b_pred_indices = b_pred_indices.cpu().numpy()
+        b_token_ids = b_token_ids.cpu().clone().detach().numpy()
+        # b_token_mask = b_token_mask.cpu().clone().detach().numpy()
+        gold_tokens = ds.token_ids_to_tokens(b_token_ids, b_token_mask.cpu().clone().detach().numpy(), data_vocab)
+        # b_lattice = b_lattice.cpu().clone().detach().numpy()
+        # b_gold_indices = b_gold_indices.cpu().clone().detach().numpy()
+        # b_pred_indices = b_pred_indices.cpu().clone().detach().numpy()
         gold_token_lattice = to_token_lattice(b_lattice_ids, b_token_mask, b_gold_indices)
         pred_token_lattice = to_token_lattice(b_lattice_ids, b_token_mask, b_pred_indices)
         print_samples.append((gold_tokens, gold_token_lattice, pred_token_lattice))
@@ -179,7 +184,7 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
 
 lr = 1e-3
 adam = AdamW(ptrnet.parameters(), lr=lr)
-adam = ModelOptimizer(10, adam, ptrnet.parameters(), 5.0)
+adam = ModelOptimizer(10, adam, list(ptrnet.parameters()), 0.0)
 epochs = 3
 for i in trange(epochs, desc="Epoch"):
     epoch = i + 1
