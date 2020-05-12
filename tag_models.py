@@ -178,7 +178,8 @@ class Seq2SeqClassifier(nn.Module):
                 pred_label = torch.gather(gold_labels, 1, index)
                 pred_label = pred_label[:, :, label_indices].squeeze(dim=1)
             else:
-                pred_label = self.decoder.decode(dec_scores)
+                with torch.no_grad():
+                    pred_label = self.decoder.decode(dec_scores)
             token_length_mask = token_lengths == token_indices
             # <PAD> all predictions beyond sentence tokens
             pred_label[token_length_mask] = 0

@@ -1,6 +1,12 @@
-from collections import Counter
+from collections import Counter, defaultdict
+
+from pathlib import Path
+
 import fasttext_emb as ft
-from treebank import *
+import treebank as tb
+import numpy as np
+import pandas as pd
+import os
 
 _to_form_vec = np.vectorize(lambda x, vocab: vocab['forms'][x])
 _to_lemma_vec = np.vectorize(lambda x, vocab: vocab['lemmas'][x])
@@ -451,10 +457,31 @@ def _load_data(root_path, partition, data_type=None):
             file_path = root_path / f'{partition_type}-{data_type}.lattices.csv'
         else:
             file_path = root_path / f'{partition_type}.lattices.csv'
-        print(f'loading {file_path.stem}')
         dataset[partition_type] = pd.read_csv(str(file_path), index_col=0, keep_default_na=False)
-        print(f'{file_path.stem} data size: {len(dataset[partition_type])}')
+        print(f'{file_path.name} data size: {len(dataset[partition_type])}')
     return dataset
+
+
+def _remove_infused_analyses(lattices_dataset):
+    uninfused_dataset = {}
+    for partition_type in lattices_dataset:
+        df = lattices_dataset[partition_type]
+        uninfused_dataset[partition_type] = df[df.is_inf != True]
+        print(f'{partition_type} uninfused data size: {len(uninfused_dataset[partition_type])}')
+    return uninfused_dataset
+
+
+def _load_lattices_data_samples(partition, lattices_dataset, data_vocab):
+    token_samples = {t: _get_token_samples(lattices_dataset[t], data_vocab) for t in lattices_dataset}
+
+    # All variable sized attributes such as the number of morpheme per analysis or number of features per morpheme
+    # must be the same across all partitions (train, dev, test) so all partition arrays are the same fixed size.
+    max_morphemes = {t: lattices_dataset[t].morpheme_id.max() + 1 for t in partition}
+    max_feats_len = {t: max(_get_feats_len(lattices_dataset[t].feats.values)) for t in partition}
+
+    morph_samples = {t: _get_lattice_analysis_samples(lattices_dataset[t], data_vocab, max_morphemes[partition[-1]],
+                                                      max_feats_len[partition[-1]]) for t in lattices_dataset}
+    return token_samples, morph_samples, data_vocab
 
 
 def _spmrl_feats_to_str(feats):
@@ -498,6 +525,7 @@ def _ud_feats_to_str(feats):
     return np.stack(feat_str_rows)
 
 
+# API ##################################################################################################################
 def get_num_token_tags(multi_tag_ids, data_vocab):
     multi_tags = _to_tag_vec(multi_tag_ids, data_vocab)
     return _get_multi_tags_len(multi_tags).sum(axis=2).max()
@@ -577,20 +605,19 @@ def load_lattice_ft_emb(root_path, ft_root_path, data_vocab, la_name, tb_name, m
     return _load_morpheme_ft_emb(vocab_dir_path, ft_model_path, data_vocab)
 
 
-def load_lattices_data_samples(root_path, partition, la_name, tb_name, ma_name):
+def load_infused_lattices_data_samples(root_path, partition, la_name, tb_name, ma_name):
     data_dir = root_path / la_name / tb_name / 'lattice' / ma_name
     lattices_dataset = _load_data(data_dir, partition)
     data_vocab = load_lattices_vocab(root_path, la_name, tb_name, ma_name)
-    token_samples = {t: _get_token_samples(lattices_dataset[t], data_vocab) for t in lattices_dataset}
+    return _load_lattices_data_samples(partition, lattices_dataset, data_vocab)
 
-    # All variable sized attributes such as the number of morpheme per analysis or number of features per morpheme
-    # must be the same across all partitions (train, dev, test) so all partition arrays are the same fixed size.
-    max_morphemes = {t: lattices_dataset[t].morpheme_id.max() + 1 for t in partition}
-    max_feats_len = {t: max(_get_feats_len(lattices_dataset[t].feats.values)) for t in partition}
 
-    morph_samples = {t: _get_lattice_analysis_samples(lattices_dataset[t], data_vocab, max_morphemes[partition[-1]],
-                                                      max_feats_len[partition[-1]]) for t in lattices_dataset}
-    return token_samples, morph_samples, data_vocab
+def load_uninfused_lattices_data_samples(root_path, partition, la_name, tb_name, ma_name):
+    data_dir = root_path / la_name / tb_name / 'lattice' / ma_name
+    lattices_dataset = _load_data(data_dir, partition)
+    lattices_dataset = _remove_infused_analyses(lattices_dataset)
+    data_vocab = load_lattices_vocab(root_path, la_name, tb_name, ma_name)
+    return _load_lattices_data_samples(partition, lattices_dataset, data_vocab)
 
 
 def load_gold_data_samples(root_path, partition, la_name, tb_name):
@@ -613,10 +640,11 @@ def load_gold_multi_data_samples(root_path, partition, la_name, tb_name, multi_t
     morph_samples = {t: _get_fixed_analysis_samples(gold_dataset[t], data_vocab, max_morphemes[partition[-1]])
                         for t in gold_dataset}
     return token_samples, morph_samples, data_vocab
+# API ##################################################################################################################
 
 
 def _save_lattices_vocab(root_path, partition, la_name, tb_name, ma_name):
-    lattices_dataset, gold_dataset = tb_load_infused_lattices(root_path, partition, la_name, tb_name, ma_name)
+    lattices_dataset, gold_dataset = tb.tb_load_infused_lattices(root_path, partition, la_name, tb_name, ma_name)
     lattices_vocab = _get_vocab(lattices_dataset)
     gold_vocab = _get_vocab(gold_dataset)
     gold_lattices_vocab = _get_vocabs_union(lattices_vocab, gold_vocab)
@@ -624,13 +652,13 @@ def _save_lattices_vocab(root_path, partition, la_name, tb_name, ma_name):
 
 
 def _save_gold_vocab(root_path, partition, la_name, tb_name):
-    gold_dataset = tb_load_gold(root_path, partition, la_name, tb_name)
+    gold_dataset = tb.tb_load_gold(root_path, partition, la_name, tb_name)
     gold_vocab = _get_vocab(gold_dataset)
     _save_vocab(root_path / root_path / la_name / tb_name / 'vocab', gold_vocab)
 
 
 def _save_gold_multi_vocab(root_path, partition, la_name, tb_name, multi_tag_level):
-    gold_dataset = tb_load_gold_multi_tag(root_path, partition, la_name, tb_name, multi_tag_level)
+    gold_dataset = tb.tb_load_gold_multi_tag(root_path, partition, la_name, tb_name, multi_tag_level)
     gold_vocab = _get_vocab(gold_dataset)
     _save_vocab(root_path / root_path / la_name / tb_name / 'seq' / f'{multi_tag_level}-multi-tag' / 'vocab', gold_vocab)
 
@@ -672,33 +700,38 @@ def main():
     for la_name in ['he', 'tr']:
         tb_name = tb_names[la_name]
         ma_name = ma_names[la_name]
-        _save_gold_vocab(root_path, partition, la_name, tb_name)
-        _save_gold_ft_emb(root_path, ft_path, la_name, tb_name)
-        _save_gold_multi_vocab(root_path, partition, la_name, tb_name, 'token')
-        _save_gold_multi_ft_emb(root_path, ft_path, la_name, tb_name, 'token')
-        if scheme == 'SPMRL':
-            _save_gold_multi_vocab(root_path, partition, la_name, tb_name, 'morpheme-type')
-            _save_gold_multi_ft_emb(root_path, ft_path, la_name, tb_name, 'morpheme-type')
-        _save_lattices_vocab(root_path, partition, la_name, tb_name, ma_name)
-        _save_lattice_ft_emb(root_path, ft_path, la_name, tb_name, ma_name)
-
-        token_samples, morph_samples, data_vocab = load_lattices_data_samples(root_path, partition, la_name, tb_name, ma_name)
+        # _save_gold_vocab(root_path, partition, la_name, tb_name)
+        # _save_gold_ft_emb(root_path, ft_path, la_name, tb_name)
+        # _save_gold_multi_vocab(root_path, partition, la_name, tb_name, 'token')
+        # _save_gold_multi_ft_emb(root_path, ft_path, la_name, tb_name, 'token')
+        # if scheme == 'SPMRL':
+        #     _save_gold_multi_vocab(root_path, partition, la_name, tb_name, 'morpheme-type')
+        #     _save_gold_multi_ft_emb(root_path, ft_path, la_name, tb_name, 'morpheme-type')
+        # _save_lattices_vocab(root_path, partition, la_name, tb_name, ma_name)
+        # _save_lattice_ft_emb(root_path, ft_path, la_name, tb_name, ma_name)
+        #
+        token_samples, morph_samples, data_vocab = load_infused_lattices_data_samples(root_path, partition, la_name, tb_name, ma_name)
         for partition_type in partition:
-            print(f'{len(token_samples[partition_type])} {partition_type} token samples, '
-                  f'{len(morph_samples[partition_type])} {partition_type} morpheme samples')
+            print(f'{len(token_samples[partition_type][0])} {partition_type} token samples, '
+                  f'{len(morph_samples[partition_type][0])} {partition_type} infused morpheme samples')
+        token_samples, morph_samples, data_vocab = load_uninfused_lattices_data_samples(root_path, partition, la_name,
+                                                                                      tb_name, ma_name)
+        for partition_type in partition:
+            print(f'{len(token_samples[partition_type][0])} {partition_type} token samples, '
+                  f'{len(morph_samples[partition_type][0])} {partition_type} uninfused morpheme samples')
         token_samples, morph_samples, data_vocab = load_gold_data_samples(root_path, partition, la_name, tb_name)
         for partition_type in partition:
             print(f'{len(token_samples[partition_type])} {partition_type} token samples, '
-                  f'{len(morph_samples[partition_type])} {partition_type} morpheme samples')
+                  f'{len(morph_samples[partition_type])} {partition_type} gold morpheme samples')
         token_samples, morph_samples, data_vocab = load_gold_multi_data_samples(root_path, partition, la_name, tb_name, 'token')
         for partition_type in partition:
             print(f'{len(token_samples[partition_type])} {partition_type} token samples, '
-                  f'{len(morph_samples[partition_type])} {partition_type} morpheme samples')
+                  f'{len(morph_samples[partition_type])} {partition_type} multi-token morpheme samples')
         if scheme == 'SPMRL':
             token_samples, morph_samples, data_vocab = load_gold_multi_data_samples(root_path, partition, la_name, tb_name, 'morpheme-type')
             for partition_type in partition:
                 print(f'{len(token_samples[partition_type])} {partition_type} token samples, '
-                      f'{len(morph_samples[partition_type])} {partition_type} morpheme samples')
+                      f'{len(morph_samples[partition_type])} {partition_type} multi-morpheme-type morpheme samples')
 
 
 if __name__ == '__main__':

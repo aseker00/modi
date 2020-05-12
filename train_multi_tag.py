@@ -6,9 +6,11 @@ from tqdm import trange
 from utils import *
 import dataset as ds
 from tag_models import *
-from pathlib import Path
 import os
 
+from pathlib import Path
+root_dir_path = Path.home() / 'dev/aseker00/modi'
+ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
 
 # scheme = 'UD'
 scheme = 'SPMRL'
@@ -24,8 +26,6 @@ else:
 # multi_tag_level = 'token'
 multi_tag_level = 'morpheme-type'
 
-root_dir_path = Path.home() / 'dev/aseker00/modi'
-ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
 tb_root_dir_path = root_dir_path / 'tb' / scheme
 data_dir_path = root_dir_path / 'data' / scheme / la_name / tb_name / 'seq' / f'{multi_tag_level}-multi-tag'
 
@@ -144,10 +144,10 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
         print_loss += sum(b_losses)
         total_loss += sum(b_losses)
         b_pred_multi_tag_ids = model.decode(b_scores)
-        b_token_ids = b_token_ids.cpu().clone().detach().numpy()
-        b_token_mask = b_token_mask.cpu().clone().detach().numpy()
-        b_gold_multi_tag_ids = b_gold_multi_tag_ids.cpu().clone().detach().numpy()
-        b_pred_multi_tag_ids = b_pred_multi_tag_ids.cpu().clone().detach().numpy()
+        b_token_ids = b_token_ids.detach().cpu().numpy()
+        b_token_mask = b_token_mask.detach().cpu().numpy()
+        b_gold_multi_tag_ids = b_gold_multi_tag_ids.detach().cpu().numpy()
+        b_pred_multi_tag_ids = b_pred_multi_tag_ids.detach().cpu().numpy()
         gold_tokens = to_tokens(b_token_ids, b_token_mask)
         max_token_tags_num = get_num_token_tags(b_gold_multi_tag_ids)
         max_token_tags_num = max(max_token_tags_num, get_num_token_tags(b_pred_multi_tag_ids))

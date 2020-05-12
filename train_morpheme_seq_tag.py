@@ -5,9 +5,11 @@ from tqdm import trange
 from utils import *
 import dataset as ds
 from tag_models import *
-from pathlib import Path
 import os
 
+from pathlib import Path
+root_dir_path = Path.home() / 'dev/aseker00/modi'
+ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
 
 scheme = 'UD'
 # scheme = 'SPMRL'
@@ -21,8 +23,6 @@ if la_name == 'he':
 else:
     tb_name = 'IMST'
 
-root_dir_path = Path.home() / 'dev/aseker00/modi'
-ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
 tb_root_dir_path = root_dir_path / 'tb' / scheme
 data_dir_path = root_dir_path / 'data' /scheme / la_name / tb_name
 
@@ -71,8 +71,7 @@ num_tags = len(data_vocab['tags'])
 max_tag_seq_len = train_set.tensors[-1].shape[2]
 tag_emb = nn.Embedding(num_embeddings=num_tags, embedding_dim=100, padding_idx=0)
 token_char_emb = TokenCharEmbedding(token_ft_emb, char_ft_emb, 50)
-token_encoder = nn.LSTM(input_size=token_char_emb.embedding_dim, hidden_size=300, num_layers=1, bidirectional=True,
-                        batch_first=True, dropout=0.0)
+token_encoder = nn.LSTM(input_size=token_char_emb.embedding_dim, hidden_size=300, num_layers=1, bidirectional=True, batch_first=True, dropout=0.0)
 tag_decoder = SequenceStepDecoder(token_char_emb.embedding_dim + tag_emb.embedding_dim, token_encoder.hidden_size * 2, 1, 0.0, num_tags)
 sos = torch.tensor([data_vocab['tag2id']['<SOS>']], dtype=torch.long, device=device)
 eot = torch.tensor([data_vocab['tag2id']['<EOT>']], dtype=torch.long, device=device)
@@ -108,10 +107,10 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
         print_loss += b_loss
         total_loss += b_loss
         b_pred_tag_ids = model.decode(b_scores)
-        b_token_ids = b_token_ids.cpu().clone().detach().numpy()
-        b_token_mask = b_token_mask.cpu().clone().detach().numpy()
-        b_gold_tag_ids = b_gold_tag_ids.cpu().clone().detach().numpy()
-        b_pred_tag_ids = b_pred_tag_ids.cpu().clone().detach().numpy()
+        b_token_ids = b_token_ids.detach().cpu().numpy()
+        b_token_mask = b_token_mask.detach().cpu().numpy()
+        b_gold_tag_ids = b_gold_tag_ids.detach().cpu().numpy()
+        b_pred_tag_ids = b_pred_tag_ids.detach().cpu().numpy()
         gold_tokens = to_tokens(b_token_ids, b_token_mask)
         gold_token_lattice = to_token_lattice(b_gold_tag_ids, b_token_mask)
         pred_token_lattice = to_token_lattice(b_pred_tag_ids, b_token_mask)

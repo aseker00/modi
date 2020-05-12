@@ -7,8 +7,7 @@ import pandas as pd
 import os
 
 
-_lattice_fields = ['sent_id', 'from_node_id', 'to_node_id', 'form', 'lemma', 'tag', 'feats', 'token_id', 'token',
-                  'is_gold']
+_lattice_fields = ['sent_id', 'from_node_id', 'to_node_id', 'form', 'lemma', 'tag', 'feats', 'token_id', 'token', 'is_gold']
 
 
 def _get_sent_indices_to_remove(dataset, tags):
@@ -513,6 +512,7 @@ def _load_gold_data_lattices(root_path, partition, la_name, tb_name, ma_name):
     return gold_dataset
 
 
+# API ##################################################################################################################
 def tb_load_gold(root_path, partition, la_name, tb_name):
     return _load_data_lattices(root_path / la_name / tb_name, partition, 'gold')
 
@@ -532,6 +532,7 @@ def tb_load_uninfused_lattices(root_path, partition, la_name, tb_name, ma_name):
     gold_dataset = _load_gold_data_lattices(root_path, partition, la_name, tb_name, ma_name)
     lattices_dataset = _load_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, partition, 'uninf')
     return lattices_dataset, gold_dataset
+# API ##################################################################################################################
 
 
 def main():
