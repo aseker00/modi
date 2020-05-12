@@ -15,17 +15,26 @@ ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
 
 scheme = 'UD'
 # scheme = 'SPMRL'
-la_name = 'he'
+la_name = 'ar'
+# la_name = 'he'
 # la_name = 'tr'
-if la_name == 'he':
+if la_name == 'tr':
+    tb_name = 'IMST'
+    # ma_name = 'trmorph2'
+    # ma_name = 'ApertiumMA'
+    ma_name = 'baseline'
+elif la_name == 'ar':
+    tb_name = 'PADT'
+    ma_name = 'baseline'
+else:
     if scheme == 'UD':
         tb_name = 'HTB'
+        # ma_name = 'heblex'
+        # ma_name = 'Apertium'
+        ma_name = 'baseline'
     else:
         tb_name = 'HEBTB'
-    ma_name = 'heblex'
-else:
-    tb_name = 'IMST'
-    ma_name = 'trmorph2'
+        ma_name = 'heblex'
 
 tb_root_dir_path = root_dir_path / 'tb' / scheme
 data_dir_path = root_dir_path / 'data' / scheme / la_name / tb_name / 'lattice' / ma_name
@@ -227,7 +236,7 @@ epochs = 3
 for i in trange(epochs, desc="Epoch"):
     epoch = i + 1
     ptrnet.train()
-    run_data(epoch, 'train-inf', inf_train_data, 320, ptrnet, adam, 1.0)
+    run_data(epoch, 'train-inf', inf_train_data, 10, ptrnet, adam, 1.0)
     # run_data(epoch, 'train-uninf', uninf_train_data, 320, ptrnet, adam, 1.0)
     ptrnet.eval()
     with torch.no_grad():

@@ -476,11 +476,14 @@ def _load_lattices_data_samples(partition, lattices_dataset, data_vocab):
 
     # All variable sized attributes such as the number of morpheme per analysis or number of features per morpheme
     # must be the same across all partitions (train, dev, test) so all partition arrays are the same fixed size.
-    max_morphemes = {t: lattices_dataset[t].morpheme_id.max() + 1 for t in partition}
-    max_feats_len = {t: max(_get_feats_len(lattices_dataset[t].feats.values)) for t in partition}
+    # max_morphemes = {t: lattices_dataset[t].morpheme_id.max() + 1 for t in partition}
+    # max_feats_len = {t: max(_get_feats_len(lattices_dataset[t].feats.values)) for t in partition}
+    max_morphemes = max([lattices_dataset[t].morpheme_id.max() + 1 for t in partition])
+    max_feats_len = max([max(_get_feats_len(lattices_dataset[t].feats.values)) for t in partition])
 
-    morph_samples = {t: _get_lattice_analysis_samples(lattices_dataset[t], data_vocab, max_morphemes[partition[-1]],
-                                                      max_feats_len[partition[-1]]) for t in lattices_dataset}
+    # morph_samples = {t: _get_lattice_analysis_samples(lattices_dataset[t], data_vocab, max_morphemes[partition[-1]],
+    #                                                   max_feats_len[partition[-1]]) for t in lattices_dataset}
+    morph_samples = {t: _get_lattice_analysis_samples(lattices_dataset[t], data_vocab, max_morphemes, max_feats_len) for t in lattices_dataset}
     return token_samples, morph_samples, data_vocab
 
 
@@ -693,23 +696,31 @@ def main():
     root_path = Path.home() / f'dev/aseker00/modi/tb/{scheme}'
     ft_path = Path.home() / 'dev/aseker00/fastText'
     if scheme == 'UD':
-        tb_names = {'he': 'HTB', 'tr': 'IMST'}
+        tb_names = {'ar': 'PADT', 'he': 'HTB', 'tr': 'IMST'}
+        ma_names = {'he': 'heblex', 'tr': 'trmorph2'}
+        # ma_names = {'he': 'Apertium', 'tr': 'ApertiumMA'}
+        # ma_names = {'ar': 'baseline', 'he': 'baseline', 'tr': 'baseline'}
     else:
         tb_names = {'he': 'HEBTB'}
-    ma_names = {'he': 'heblex', 'tr': 'trmorph2'}
-    for la_name in ['he', 'tr']:
+        ma_names = {'he': 'heblex'}
+
+    for la_name in ['ar', 'he', 'tr']:
+        if la_name not in tb_names:
+            continue
         tb_name = tb_names[la_name]
+        _save_gold_vocab(root_path, partition, la_name, tb_name)
+        _save_gold_ft_emb(root_path, ft_path, la_name, tb_name)
+        _save_gold_multi_vocab(root_path, partition, la_name, tb_name, 'token')
+        _save_gold_multi_ft_emb(root_path, ft_path, la_name, tb_name, 'token')
+        if scheme == 'SPMRL':
+            _save_gold_multi_vocab(root_path, partition, la_name, tb_name, 'morpheme-type')
+            _save_gold_multi_ft_emb(root_path, ft_path, la_name, tb_name, 'morpheme-type')
+        if la_name not in ma_names:
+            continue
         ma_name = ma_names[la_name]
-        # _save_gold_vocab(root_path, partition, la_name, tb_name)
-        # _save_gold_ft_emb(root_path, ft_path, la_name, tb_name)
-        # _save_gold_multi_vocab(root_path, partition, la_name, tb_name, 'token')
-        # _save_gold_multi_ft_emb(root_path, ft_path, la_name, tb_name, 'token')
-        # if scheme == 'SPMRL':
-        #     _save_gold_multi_vocab(root_path, partition, la_name, tb_name, 'morpheme-type')
-        #     _save_gold_multi_ft_emb(root_path, ft_path, la_name, tb_name, 'morpheme-type')
-        # _save_lattices_vocab(root_path, partition, la_name, tb_name, ma_name)
-        # _save_lattice_ft_emb(root_path, ft_path, la_name, tb_name, ma_name)
-        #
+        _save_lattices_vocab(root_path, partition, la_name, tb_name, ma_name)
+        _save_lattice_ft_emb(root_path, ft_path, la_name, tb_name, ma_name)
+
         token_samples, morph_samples, data_vocab = load_infused_lattices_data_samples(root_path, partition, la_name, tb_name, ma_name)
         for partition_type in partition:
             print(f'{len(token_samples[partition_type][0])} {partition_type} token samples, '
@@ -721,17 +732,17 @@ def main():
                   f'{len(morph_samples[partition_type][0])} {partition_type} uninfused morpheme samples')
         token_samples, morph_samples, data_vocab = load_gold_data_samples(root_path, partition, la_name, tb_name)
         for partition_type in partition:
-            print(f'{len(token_samples[partition_type])} {partition_type} token samples, '
-                  f'{len(morph_samples[partition_type])} {partition_type} gold morpheme samples')
+            print(f'{len(token_samples[partition_type][0])} {partition_type} token samples, '
+                  f'{len(morph_samples[partition_type][0])} {partition_type} gold morpheme samples')
         token_samples, morph_samples, data_vocab = load_gold_multi_data_samples(root_path, partition, la_name, tb_name, 'token')
         for partition_type in partition:
-            print(f'{len(token_samples[partition_type])} {partition_type} token samples, '
-                  f'{len(morph_samples[partition_type])} {partition_type} multi-token morpheme samples')
+            print(f'{len(token_samples[partition_type][0])} {partition_type} token samples, '
+                  f'{len(morph_samples[partition_type][0])} {partition_type} multi-token morpheme samples')
         if scheme == 'SPMRL':
             token_samples, morph_samples, data_vocab = load_gold_multi_data_samples(root_path, partition, la_name, tb_name, 'morpheme-type')
             for partition_type in partition:
-                print(f'{len(token_samples[partition_type])} {partition_type} token samples, '
-                      f'{len(morph_samples[partition_type])} {partition_type} multi-morpheme-type morpheme samples')
+                print(f'{len(token_samples[partition_type][0])} {partition_type} token samples, '
+                      f'{len(morph_samples[partition_type][0])} {partition_type} multi-morpheme-type morpheme samples')
 
 
 if __name__ == '__main__':

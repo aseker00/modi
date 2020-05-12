@@ -45,15 +45,15 @@ def _dfs(edges, cur_node_id, next_node_id, analysis_in, analyses):
 
 def _parse_sent_analyses(df, column_names):
     token_analyses = {}
-    edges = defaultdict(lambda: defaultdict(list))
+    token_edges = defaultdict(lambda: defaultdict(list))
     for row in df.itertuples():
-        edges[row.token_id][row.from_node_id].append(row)
-    for token_id in edges:
+        token_edges[row.token_id][row.from_node_id].append(row)
+    for token_id in token_edges:
         analyses = []
-        token_lattice_start_node_id = min(edges[token_id].keys())
-        token_lattice_start_node = edges[token_id][token_lattice_start_node_id]
+        token_lattice_start_node_id = min(token_edges[token_id].keys())
+        token_lattice_start_node = token_edges[token_id][token_lattice_start_node_id]
         for j in range(len(token_lattice_start_node)):
-            _dfs(edges[token_id], token_lattice_start_node_id, j, [], analyses)
+            _dfs(token_edges[token_id], token_lattice_start_node_id, j, [], analyses)
         token_analyses[token_id] = analyses
     return _lattice_to_dataframe(token_analyses, column_names)
 
@@ -317,9 +317,13 @@ def _load_spmrl_conll(tb_path, partition, column_names, lang, tb_name, ma_name=N
 def _build_ud_sample(sent_id, ud_lattice, column_names):
     tokens = {}
     lattice = []
+    # nodes = {0}
     for morpheme in ud_lattice:
         if len(morpheme[0].split('-')) == 2:
             from_node_id, to_node_id = (int(v) for v in morpheme[0].split('-'))
+            # if from_node_id not in nodes:
+            #     print(f'unreachable node id in morpheme row: {morpheme}')
+            # nodes.add(to_node_id)
             token = morpheme[1]
             tokens[to_node_id] = token
         else:
@@ -333,8 +337,6 @@ def _build_ud_sample(sent_id, ud_lattice, column_names):
             elif len(morpheme) == 9:
                 morpheme[0] = int(morpheme[0])
                 morpheme[1] = int(morpheme[1])
-                # if 'goldId' in morpheme[7]:
-                #     is_gold = True
             else:
                 raise Exception(f'sent {sent_id} invalid morpheme: {morpheme}')
             morpheme_token_node_id = morpheme[1]
@@ -487,7 +489,7 @@ def _save_uninfused_lattices(tb_path, root_path, partition, lang, la_name, tb_na
         lattices['train'] = [df for df in lattices['train'] if df.sent_id.unique() not in indices]
     lattices_dataset = _to_data_lattices(lattices)
     valid_sent_mask = _validate_data_lattices(lattices_dataset, gold_dataset)
-    if any([not any(valid_sent_mask[t]) for t in partition]):
+    if any([not all(valid_sent_mask[t]) for t in partition]):
         for partition_type in partition:
             lattices_dataset[partition_type] = [d for d, m in zip(lattices_dataset[partition_type], valid_sent_mask[partition_type]) if m]
             gold_dataset[partition_type] = [d for d, m in zip(gold_dataset[partition_type], valid_sent_mask[partition_type]) if m]
@@ -542,21 +544,29 @@ def main():
     partition = ['dev', 'test', 'train']
     root_path = Path.home() / f'dev/aseker00/modi/tb/{scheme}'
     tb_path = Path.home() / f'dev/onlplab/{schemes[scheme]}'
-    langs = {'he': 'Hebrew', 'tr': 'Turkish'}
+    langs = {'ar': 'Arabic', 'he': 'Hebrew', 'tr': 'Turkish'}
     if scheme == 'UD':
-        tb_names = {'he': 'HTB', 'tr': 'IMST'}
+        tb_names = {'ar': 'PADT', 'he': 'HTB', 'tr': 'IMST'}
+        ma_names = {'he': 'heblex', 'tr': 'trmorph2'}
+        # ma_names = {'he': 'Apertium', 'tr': 'ApertiumMA'}
+        # ma_names = {'ar': 'baseline', 'he': 'baseline', 'tr': 'baseline'}
     else:
         tb_names = {'he': 'HEBTB'}
-    ma_names = {'he': 'heblex', 'tr': 'trmorph2'}
-    for la_name in ['he', 'tr']:
+        ma_names = {'he': 'heblex'}
+
+    for la_name in ['ar', 'he', 'tr']:
+        if la_name not in langs or la_name not in tb_names:
+            continue
         lang = langs[la_name]
         tb_name = tb_names[la_name]
-        ma_name = ma_names[la_name]
         _save_gold(tb_path, root_path, partition, lang, la_name, tb_name, scheme)
         _save_gold_multi_tag(root_path, partition, la_name, tb_name, 'token')
         if scheme == 'SPMRL':
             _save_gold_morpheme_tag_type(root_path, partition, la_name, tb_name)
             _save_gold_multi_tag(root_path, partition, la_name, tb_name, 'morpheme-type')
+        if la_name not in ma_names:
+            continue
+        ma_name = ma_names[la_name]
         _save_uninfused_lattices(tb_path, root_path, partition, lang, la_name, tb_name, ma_name, scheme)
         _save_infused_lattices(root_path, partition, la_name, tb_name, ma_name)
 
