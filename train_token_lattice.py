@@ -88,8 +88,7 @@ if all([path.exists() for path in [char_ft_emb_path, token_ft_emb_path, form_ft_
     form_ft_emb = torch.load(form_ft_emb_path)
     lemma_ft_emb = torch.load(lemma_ft_emb_path)
 else:
-    char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = ds.load_lattice_ft_emb(tb_root_dir_path, ft_root_dir_path,
-                                                                                  data_vocab, la_name, tb_name, ma_name)
+    char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = ds.load_lattice_ft_emb(tb_root_dir_path, ft_root_dir_path, data_vocab, la_name, tb_name, ma_name)
     torch.save(char_ft_emb, char_ft_emb_path)
     torch.save(token_ft_emb, token_ft_emb_path)
     torch.save(form_ft_emb, form_ft_emb_path)
@@ -164,11 +163,11 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
         b_analysis_lengths = batch[3]
 
         # Infused gold lattices - evaluation only
-        b_gold_is_gold = batch[4][:, :, :, 0, 0]
-        b_gold_lattice_ids = batch[4][:, :, :, :, 1:]
-        b_gold_gold_indices = torch.ones((b_gold_is_gold.shape[0], b_gold_is_gold.shape[1]), dtype=torch.long) * (-1)
-        for idx in b_gold_is_gold.nonzero():
-            b_gold_gold_indices[idx[0], idx[1]] = idx[2]
+        b_eval_is_gold = batch[4][:, :, :, 0, 0]
+        b_eval_lattice_ids = batch[4][:, :, :, :, 1:]
+        b_eval_gold_indices = torch.ones((b_eval_is_gold.shape[0], b_eval_is_gold.shape[1]), dtype=torch.long, device=device) * (-1)
+        for idx in b_eval_is_gold.nonzero():
+            b_eval_gold_indices[idx[0], idx[1]] = idx[2]
 
         b_token_mask = b_token_ids[:, :, 0, 0] != 0
         b_batch_size = b_lattice_ids.shape[0]
@@ -196,10 +195,10 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
         # b_gold_indices = b_gold_indices.detach().cpu().numpy()
         # b_pred_indices = b_pred_indices.detach().cpu().numpy()
 
-        gold_token_lattice = to_token_lattice(b_gold_lattice_ids, b_token_mask, b_gold_gold_indices)
-        pred_token_lattice = to_token_lattice(b_lattice_ids, b_token_mask, b_pred_indices)
-        print_samples.append((gold_tokens, gold_token_lattice, pred_token_lattice))
-        total_samples.append((gold_tokens, gold_token_lattice, pred_token_lattice))
+        eval_gold_token_lattice = to_token_lattice(b_eval_lattice_ids, b_token_mask, b_eval_gold_indices)
+        eval_pred_token_lattice = to_token_lattice(b_lattice_ids, b_token_mask, b_pred_indices)
+        print_samples.append((gold_tokens, eval_gold_token_lattice, eval_pred_token_lattice))
+        total_samples.append((gold_tokens, eval_gold_token_lattice, eval_pred_token_lattice))
 
         if optimizer is not None:
             optimizer.step([b_loss])
@@ -223,13 +222,13 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
 # torch.backends.cudnn.enabled = False
 lr = 1e-3
 adam = AdamW(ptrnet.parameters(), lr=lr)
-adam = ModelOptimizer(10, adam, list(ptrnet.parameters()), 0.0)
+adam = ModelOptimizer(1, adam, list(ptrnet.parameters()), 0.0)
 epochs = 3
 for i in trange(epochs, desc="Epoch"):
     epoch = i + 1
     ptrnet.train()
-    run_data(epoch, 'train-inf', inf_train_data, 32, ptrnet, adam, 1.0)
-    # run_data(epoch, 'train-uninf', uninf_train_data, 32, ptrnet, adam, 1.0)
+    run_data(epoch, 'train-inf', inf_train_data, 320, ptrnet, adam, 1.0)
+    # run_data(epoch, 'train-uninf', uninf_train_data, 320, ptrnet, adam, 1.0)
     ptrnet.eval()
     with torch.no_grad():
         run_data(epoch, 'dev-inf', inf_dev_data, 32, ptrnet)
