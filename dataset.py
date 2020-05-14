@@ -682,23 +682,26 @@ def load_gold_multi_data_samples(root_path, partition, la_name, tb_name, multi_t
 
 
 def _save_lattices_vocab(root_path, partition, la_name, tb_name, ma_name):
+    vocab_dir_path = root_path / la_name / tb_name / 'lattice' / ma_name / 'vocab'
     lattices_dataset, gold_dataset = tb.tb_load_infused_lattices(root_path, partition, la_name, tb_name, ma_name)
     lattices_vocab = _get_vocab(lattices_dataset)
     gold_vocab = _get_vocab(gold_dataset)
     gold_lattices_vocab = _get_vocabs_union(lattices_vocab, gold_vocab)
-    _save_vocab(root_path / root_path / la_name / tb_name / 'lattice' / ma_name / 'vocab', gold_lattices_vocab)
+    _save_vocab(vocab_dir_path, gold_lattices_vocab)
 
 
 def _save_gold_vocab(root_path, partition, la_name, tb_name):
+    vocab_dir_path = root_path / la_name / tb_name / 'vocab'
     gold_dataset = tb.tb_load_gold(root_path, partition, la_name, tb_name)
     gold_vocab = _get_vocab(gold_dataset)
-    _save_vocab(root_path / root_path / la_name / tb_name / 'vocab', gold_vocab)
+    _save_vocab(vocab_dir_path, gold_vocab)
 
 
 def _save_gold_multi_vocab(root_path, partition, la_name, tb_name, multi_tag_level):
+    vocab_dir_path = root_path / la_name / tb_name / 'seq' / f'{multi_tag_level}-multi-tag' / 'vocab'
     gold_dataset = tb.tb_load_gold_multi_tag(root_path, partition, la_name, tb_name, multi_tag_level)
     gold_vocab = _get_vocab(gold_dataset)
-    _save_vocab(root_path / root_path / la_name / tb_name / 'seq' / f'{multi_tag_level}-multi-tag' / 'vocab', gold_vocab)
+    _save_vocab(vocab_dir_path, gold_vocab)
 
 
 def _save_gold_ft_emb(root_path, ft_root_path, la_name, tb_name):
@@ -721,7 +724,7 @@ def _save_lattice_ft_emb(root_path, ft_root_path, la_name, tb_name, ma_name):
     vocab_dir_path = root_path / la_name / tb_name / 'lattice' / ma_name / 'vocab'
     data_vocab = _load_vocab(vocab_dir_path)
     ft_model_path = ft_root_path / f'models/cc.{la_name}.300.bin'
-    _save_morpheme_ft_emb(root_path, ft_model_path, data_vocab)
+    _save_morpheme_ft_emb(vocab_dir_path, ft_model_path, data_vocab)
 
 
 def main():
