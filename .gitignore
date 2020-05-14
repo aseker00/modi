@@ -4,3 +4,4 @@ __pycache__/
 *.pth
 *.[0-9]*x
 tb/
+data/
