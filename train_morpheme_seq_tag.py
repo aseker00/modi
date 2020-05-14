@@ -13,15 +13,18 @@ ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
 
 scheme = 'UD'
 # scheme = 'SPMRL'
-la_name = 'he'
+la_name = 'ar'
+# la_name = 'he'
 # la_name = 'tr'
-if la_name == 'he':
+if la_name == 'ar':
+    tb_name = 'PADT'
+if la_name == 'tr':
+    tb_name = 'IMST'
+else:
     if scheme == 'UD':
         tb_name = 'HTB'
     else:
         tb_name = 'HEBTB'
-else:
-    tb_name = 'IMST'
 
 tb_root_dir_path = root_dir_path / 'tb' / scheme
 data_dir_path = root_dir_path / 'data' /scheme / la_name / tb_name

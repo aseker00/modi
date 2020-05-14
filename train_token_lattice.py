@@ -21,17 +21,19 @@ la_name = 'ar'
 if la_name == 'tr':
     tb_name = 'IMST'
     # ma_name = 'trmorph2'
-    # ma_name = 'ApertiumMA'
-    ma_name = 'baseline'
+    ma_name = 'ApertiumMA'
+    # ma_name = 'baseline'
 elif la_name == 'ar':
     tb_name = 'PADT'
-    ma_name = 'baseline'
+    ma_name = 'calima-star'
+    # ma_name = 'Apertium-E'
+    # ma_name = 'baseline'
 else:
     if scheme == 'UD':
         tb_name = 'HTB'
         # ma_name = 'heblex'
-        # ma_name = 'Apertium'
-        ma_name = 'baseline'
+        ma_name = 'Apertium'
+        # ma_name = 'baseline'
     else:
         tb_name = 'HEBTB'
         ma_name = 'heblex'
@@ -50,6 +52,7 @@ token_ft_emb_path = data_dir_path / 'token-ft-emb.pth'
 form_ft_emb_path = data_dir_path / 'form-ft-emb.pth'
 lemma_ft_emb_path = data_dir_path / 'lemma-ft-emb.pth'
 
+# if False:
 if all([path.exists() for path in [inf_dev_set_path, inf_test_set_path, inf_train_set_path, uninf_dev_set_path, uninf_test_set_path, uninf_train_set_path]]):
     inf_dev_set = torch.load(inf_dev_set_path)
     inf_test_set = torch.load(inf_test_set_path)
@@ -63,17 +66,16 @@ else:
     partition = ['dev', 'test', 'train']
 
     token_samples, inf_morph_samples, data_vocab = ds.load_infused_lattices_data_samples(tb_root_dir_path, partition, la_name, tb_name, ma_name)
-    _, uninf_morph_samples, _ = ds.load_uninfused_lattices_data_samples(tb_root_dir_path, partition, la_name, tb_name, ma_name)
-
     inf_token_lengths = {t: torch.tensor(token_samples[t][1], dtype=torch.long) for t in token_samples}
     inf_analysis_lengths = {t: torch.tensor(inf_morph_samples[t][1], dtype=torch.long) for t in inf_morph_samples}
     inf_token_samples = {t: torch.tensor(token_samples[t][0], dtype=torch.long) for t in token_samples}
-    inf_morph_samples = {t: torch.tensor(inf_morph_samples[t][0], dtype=torch.long) for t in inf_morph_samples}
+    inf_morph_samples = {t: torch.tensor(inf_morph_samples[t][0].astype('int'), dtype=torch.long) for t in inf_morph_samples}
 
+    _, uninf_morph_samples, _ = ds.load_uninfused_lattices_data_samples(tb_root_dir_path, partition, la_name, tb_name, ma_name)
     uninf_token_lengths = {t: torch.tensor(token_samples[t][1], dtype=torch.long) for t in token_samples}
     uninf_analysis_lengths = {t: torch.tensor(uninf_morph_samples[t][1], dtype=torch.long) for t in uninf_morph_samples}
     uninf_token_samples = {t: torch.tensor(token_samples[t][0], dtype=torch.long) for t in token_samples}
-    uninf_morph_samples = {t: torch.tensor(uninf_morph_samples[t][0], dtype=torch.long) for t in uninf_morph_samples}
+    uninf_morph_samples = {t: torch.tensor(uninf_morph_samples[t][0].astype('int'), dtype=torch.long) for t in uninf_morph_samples}
 
     inf_dev_set = TensorDataset(*[s['dev'] for s in [inf_token_samples, inf_token_lengths, inf_morph_samples, inf_analysis_lengths, inf_morph_samples]])
     inf_test_set = TensorDataset(*[s['test'] for s in [inf_token_samples, inf_token_lengths, inf_morph_samples, inf_analysis_lengths, inf_morph_samples]])
@@ -91,6 +93,7 @@ else:
     torch.save(uninf_test_set, uninf_test_set_path)
     torch.save(uninf_train_set, uninf_train_set_path)
 
+# if False:
 if all([path.exists() for path in [char_ft_emb_path, token_ft_emb_path, form_ft_emb_path, lemma_ft_emb_path]]):
     char_ft_emb = torch.load(char_ft_emb_path)
     token_ft_emb = torch.load(token_ft_emb_path)
@@ -103,11 +106,11 @@ else:
     torch.save(form_ft_emb, form_ft_emb_path)
     torch.save(lemma_ft_emb, lemma_ft_emb_path)
 
-inf_train_data = DataLoader(inf_train_set, batch_size=1, shuffle=True)
+inf_train_data = DataLoader(inf_train_set, batch_size=1, shuffle=False)
 inf_dev_data = DataLoader(inf_dev_set, batch_size=1)
 inf_test_data = DataLoader(inf_test_set, batch_size=1)
 
-uninf_train_data = DataLoader(uninf_train_set, batch_size=1, shuffle=True)
+# uninf_train_data = DataLoader(uninf_train_set, batch_size=1, shuffle=False)
 uninf_dev_data = DataLoader(uninf_dev_set, batch_size=1)
 uninf_test_data = DataLoader(uninf_test_set, batch_size=1)
 

@@ -12,19 +12,22 @@ from pathlib import Path
 root_dir_path = Path.home() / 'dev/aseker00/modi'
 ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
 
-# scheme = 'UD'
-scheme = 'SPMRL'
-la_name = 'he'
+scheme = 'UD'
+# scheme = 'SPMRL'
+la_name = 'ar'
+# la_name = 'he'
 # la_name = 'tr'
-if la_name == 'he':
+if la_name == 'ar':
+    tb_name = 'PADT'
+elif la_name == 'tr':
+    tb_name = 'IMST'
+else:
     if scheme == 'UD':
         tb_name = 'HTB'
     else:
         tb_name = 'HEBTB'
-else:
-    tb_name = 'IMST'
-# multi_tag_level = 'token'
-multi_tag_level = 'morpheme-type'
+multi_tag_level = 'token'
+# multi_tag_level = 'morpheme-type'
 
 tb_root_dir_path = root_dir_path / 'tb' / scheme
 data_dir_path = root_dir_path / 'data' / scheme / la_name / tb_name / 'seq' / f'{multi_tag_level}-multi-tag'
@@ -117,7 +120,7 @@ def to_tag_ids(multi_tag_ids, num_token_tags):
             multi_tags[0, token_idx, tag_idx] = tag_id
             mask_idx += 1
     multi_tags = to_tags(multi_tags)
-    tags = np.full_like(multi_tags, '<PAD>', shape=(multi_tags.shape[0], multi_tags.shape[1], num_token_tags))
+    tags = np.full_like(multi_tags, '<PAD>', dtype=object, shape=(multi_tags.shape[0], multi_tags.shape[1], num_token_tags))
     for batch_idx in range(multi_tags.shape[0]):
         for token_idx in range(multi_tags.shape[1]):
             tag_idx = 0

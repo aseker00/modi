@@ -547,14 +547,14 @@ def main():
     langs = {'ar': 'Arabic', 'he': 'Hebrew', 'tr': 'Turkish'}
     if scheme == 'UD':
         tb_names = {'ar': 'PADT', 'he': 'HTB', 'tr': 'IMST'}
-        ma_names = {'he': 'heblex', 'tr': 'trmorph2'}
-        # ma_names = {'he': 'Apertium', 'tr': 'ApertiumMA'}
+        ma_names = {'ar': 'calima-star', 'he': 'heblex', 'tr': 'trmorph2'}
+        # ma_names = {'ar': 'Apertium-E', 'he': 'Apertium', 'tr': 'ApertiumMA'}
         # ma_names = {'ar': 'baseline', 'he': 'baseline', 'tr': 'baseline'}
     else:
         tb_names = {'he': 'HEBTB'}
         ma_names = {'he': 'heblex'}
 
-    for la_name in ['ar', 'he', 'tr']:
+    for la_name in ['ar']:
         if la_name not in langs or la_name not in tb_names:
             continue
         lang = langs[la_name]
