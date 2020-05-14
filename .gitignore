@@ -1,6 +1,7 @@
 __pycache__/
 .idea/
 *.vec
+*.gz
 *.pth
 *.[0-9]*x
 tb/

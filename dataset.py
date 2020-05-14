@@ -340,42 +340,65 @@ def _get_lattice_analysis_samples(lattice_df, data_vocab, max_morphemes, max_fea
     lattice_samples_df = pd.DataFrame(lattice_values, columns=column_names)
 
     # Morpheme samples
-    num_samples = lattice_samples_df.sent_idx.max()
+    # num_samples = lattice_samples_df.sent_idx.max()
+    num_samples = lattice_samples_df.sent_idx.unique().size
     max_len = lattice_samples_df.token_idx.max()
     max_analyses = lattice_samples_df.analysis_idx.max() + 1
     morpheme_len = len(morpheme_column_names) + len(feat_column_names)
-
+    samples_shape = (num_samples, max_len, max_analyses, max_morphemes, morpheme_len)
+    lattice_analysis_samples = np.zeros(samples_shape, dtype=np.int)
+    samples_df = lattice_samples_df.set_index(['sent_idx', 'token_idx', 'analysis_idx', 'morpheme_idx'])
+    sid = -1
+    row_sid = -1
+    for row in sorted(samples_df.itertuples()):
+        if row[0][0] - 1 > row_sid:
+            row_sid = row[0][0] - 1
+            sid += 1
+        tid = row[0][1] - 1
+        aid = row[0][2]
+        mid = row[0][3]
+        lattice_analysis_samples[(sid, tid, aid, mid)] = row[1:]
+    length_sampels_shape = (num_samples, max_len)
+    lattice_analysis_length_samples = np.zeros(length_sampels_shape, dtype=np.int)
+    analysis_lengths = lattice_samples_df.groupby(['sent_idx', 'token_idx'])['analysis_idx'].max()
+    sid = -1
+    row_sid = -1
+    for row in sorted(analysis_lengths.iteritems()):
+        if row[0][0] - 1 > row_sid:
+            row_sid = row[0][0] - 1
+            sid += 1
+        tid = row[0][1] - 1
+        lattice_analysis_length_samples[(sid, tid)] = row[1] + 1
     # When building the Arabic PADT calima-star train set, the dataframe shape (6074, 302, 174, 4, 11)
     # is causing the system to run out of memory when slicing the numpy array in the last line of this function.
     # To get around it I am setting dtype=uint16 which limits the allowed values in each column to 65K.
     # I'm also checking to make sure the all vocab entries are less then 65K in _load_vocab.
     # lattice_analysis_samples = np.zeros((num_samples, max_len, max_analyses, max_morphemes, morpheme_len), dtype=np.int)
-    lattice_analysis_samples = np.zeros((num_samples, max_len, max_analyses, max_morphemes, morpheme_len), dtype=np.uint16)
-
-    sent_indices = lattice_samples_df['sent_idx'].values - 1
-    token_indices = lattice_samples_df['token_idx'].values - 1
-    analysis_indices = lattice_samples_df['analysis_idx'].values
-    morpheme_indices = lattice_samples_df['morpheme_idx'].values
-    sample_values = lattice_samples_df[morpheme_column_names + feat_column_names].to_numpy()
-    lattice_analysis_samples[sent_indices, token_indices, analysis_indices, morpheme_indices] = sample_values
+    # lattice_analysis_samples = np.zeros((num_samples, max_len, max_analyses, max_morphemes, morpheme_len), dtype=np.uint16)
+    # sent_indices = lattice_samples_df['sent_idx'].values - 1
+    # token_indices = lattice_samples_df['token_idx'].values - 1
+    # analysis_indices = lattice_samples_df['analysis_idx'].values
+    # morpheme_indices = lattice_samples_df['morpheme_idx'].values
+    # sample_values = lattice_samples_df[morpheme_column_names + feat_column_names].to_numpy()
+    # lattice_analysis_samples[sent_indices, token_indices, analysis_indices, morpheme_indices] = sample_values
 
     # Morpheme analysis lengths
-    lattice_analysis_length_samples = np.zeros((num_samples, max_len), dtype=np.int)
-    analysis_lengths_df = lattice_samples_df.groupby(['sent_idx', 'token_idx'])[['analysis_idx']].max().squeeze()
-    sent_token_indices_values = analysis_lengths_df.index.values
-    sample_length_values = analysis_lengths_df.values + 1
-    sent_indices = [v[0] - 1 for v in sent_token_indices_values]
-    token_indices = [v[1] - 1 for v in sent_token_indices_values]
-    lattice_analysis_length_samples[sent_indices, token_indices] = sample_length_values
+    # lattice_analysis_length_samples = np.zeros((num_samples, max_len), dtype=np.int)
+    # analysis_lengths_df = lattice_samples_df.groupby(['sent_idx', 'token_idx'])[['analysis_idx']].max().squeeze()
+    # sent_token_indices_values = analysis_lengths_df.index.values
+    # sample_length_values = analysis_lengths_df.values + 1
+    # sent_indices = [v[0] - 1 for v in sent_token_indices_values]
+    # token_indices = [v[1] - 1 for v in sent_token_indices_values]
+    # lattice_analysis_length_samples[sent_indices, token_indices] = sample_length_values
 
     # num_sample (sent_idx.max()) may be greater than the actual number of samples if there are gaps in sent indices.
     # So we need to only keep the entries in the array that correspond to actual sentence indices.
     # sent_indices = lattice_samples_df.sent_idx.unique() - 1
     # a = lattice_analysis_samples.take(sent_indices, axis=0)
     # b = lattice_analysis_length_samples.take(sent_indices, axis=0)
-    a = lattice_analysis_samples[np.unique(sent_indices)]
-    b = lattice_analysis_length_samples[np.unique(sent_indices)]
-    return a, b
+    # a = lattice_analysis_samples[np.unique(sent_indices)]
+    # b = lattice_analysis_length_samples[np.unique(sent_indices)]
+    return lattice_analysis_samples, lattice_analysis_length_samples
 
 
 def _get_fixed_analysis_samples(analyses_df, data_vocab, max_morphemes):
@@ -491,20 +514,19 @@ def _remove_infused_analyses(lattices_dataset):
     return uninfused_dataset
 
 
-def _load_lattices_data_samples(partition, lattices_dataset, data_vocab):
-    token_samples = {t: _get_token_samples(lattices_dataset[t], data_vocab) for t in lattices_dataset}
+def _load_lattices_data_samples(infused_lattices_dataset, uninfused_lattices_dataset, data_vocab):
+    token_samples = {t: _get_token_samples(infused_lattices_dataset[t], data_vocab) for t in infused_lattices_dataset}
 
     # All variable sized attributes such as the number of morpheme per analysis or number of features per morpheme
     # must be the same across all partitions (train, dev, test) so all partition arrays are the same fixed size.
     # max_morphemes = {t: lattices_dataset[t].morpheme_id.max() + 1 for t in partition}
     # max_feats_len = {t: max(_get_feats_len(lattices_dataset[t].feats.values)) for t in partition}
-    max_morphemes = max([lattices_dataset[t].morpheme_id.max() + 1 for t in partition])
-    max_feats_len = max([max(_get_feats_len(lattices_dataset[t].feats.values)) for t in partition])
+    max_morphemes = max([infused_lattices_dataset[t].morpheme_id.max() + 1 for t in infused_lattices_dataset])
+    max_feats_len = max([max(_get_feats_len(infused_lattices_dataset[t].feats.values)) for t in infused_lattices_dataset])
 
-    # morph_samples = {t: _get_lattice_analysis_samples(lattices_dataset[t], data_vocab, max_morphemes[partition[-1]],
-    #                                                   max_feats_len[partition[-1]]) for t in lattices_dataset}
-    morph_samples = {t: _get_lattice_analysis_samples(lattices_dataset[t], data_vocab, max_morphemes, max_feats_len) for t in lattices_dataset}
-    return token_samples, morph_samples, data_vocab
+    infused_morph_samples = {t: _get_lattice_analysis_samples(infused_lattices_dataset[t], data_vocab, max_morphemes, max_feats_len) for t in infused_lattices_dataset}
+    uninfused_morph_samples = {t: _get_lattice_analysis_samples(uninfused_lattices_dataset[t], data_vocab, max_morphemes, max_feats_len) for t in uninfused_lattices_dataset}
+    return token_samples, infused_morph_samples, uninfused_morph_samples, data_vocab
 
 
 def _spmrl_feats_to_str(feats):
@@ -628,19 +650,12 @@ def load_lattice_ft_emb(root_path, ft_root_path, data_vocab, la_name, tb_name, m
     return _load_morpheme_ft_emb(vocab_dir_path, ft_model_path, data_vocab)
 
 
-def load_infused_lattices_data_samples(root_path, partition, la_name, tb_name, ma_name):
+def load_lattices_data_samples(root_path, partition, la_name, tb_name, ma_name):
     data_dir = root_path / la_name / tb_name / 'lattice' / ma_name
-    lattices_dataset = _load_data(data_dir, partition)
+    infused_lattices_dataset = _load_data(data_dir, partition)
+    uninfused_lattices_dataset = _remove_infused_analyses(infused_lattices_dataset)
     data_vocab = load_lattices_vocab(root_path, la_name, tb_name, ma_name)
-    return _load_lattices_data_samples(partition, lattices_dataset, data_vocab)
-
-
-def load_uninfused_lattices_data_samples(root_path, partition, la_name, tb_name, ma_name):
-    data_dir = root_path / la_name / tb_name / 'lattice' / ma_name
-    lattices_dataset = _load_data(data_dir, partition)
-    lattices_dataset = _remove_infused_analyses(lattices_dataset)
-    data_vocab = load_lattices_vocab(root_path, la_name, tb_name, ma_name)
-    return _load_lattices_data_samples(partition, lattices_dataset, data_vocab)
+    return _load_lattices_data_samples(infused_lattices_dataset, uninfused_lattices_dataset, data_vocab)
 
 
 def load_gold_data_samples(root_path, partition, la_name, tb_name):
@@ -728,28 +743,25 @@ def main():
         if la_name not in tb_names:
             continue
         tb_name = tb_names[la_name]
-        # _save_gold_vocab(root_path, partition, la_name, tb_name)
-        # _save_gold_ft_emb(root_path, ft_path, la_name, tb_name)
-        # _save_gold_multi_vocab(root_path, partition, la_name, tb_name, 'token')
-        # _save_gold_multi_ft_emb(root_path, ft_path, la_name, tb_name, 'token')
+        _save_gold_vocab(root_path, partition, la_name, tb_name)
+        _save_gold_ft_emb(root_path, ft_path, la_name, tb_name)
+        _save_gold_multi_vocab(root_path, partition, la_name, tb_name, 'token')
+        _save_gold_multi_ft_emb(root_path, ft_path, la_name, tb_name, 'token')
         if scheme == 'SPMRL':
             _save_gold_multi_vocab(root_path, partition, la_name, tb_name, 'morpheme-type')
             _save_gold_multi_ft_emb(root_path, ft_path, la_name, tb_name, 'morpheme-type')
         if la_name not in ma_names:
             continue
         ma_name = ma_names[la_name]
-        # _save_lattices_vocab(root_path, partition, la_name, tb_name, ma_name)
-        # _save_lattice_ft_emb(root_path, ft_path, la_name, tb_name, ma_name)
+        _save_lattices_vocab(root_path, partition, la_name, tb_name, ma_name)
+        _save_lattice_ft_emb(root_path, ft_path, la_name, tb_name, ma_name)
 
-        token_samples, morph_samples, data_vocab = load_infused_lattices_data_samples(root_path, partition, la_name, tb_name, ma_name)
+        token_samples, infused_morph_samples, uninfused_morph_samples, data_vocab = load_lattices_data_samples(root_path, partition, la_name, tb_name, ma_name)
         for partition_type in partition:
             print(f'{len(token_samples[partition_type][0])} {partition_type} token samples, '
-                  f'{len(morph_samples[partition_type][0])} {partition_type} infused morpheme samples')
-        token_samples, morph_samples, data_vocab = load_uninfused_lattices_data_samples(root_path, partition, la_name,
-                                                                                      tb_name, ma_name)
-        for partition_type in partition:
-            print(f'{len(token_samples[partition_type][0])} {partition_type} token samples, '
-                  f'{len(morph_samples[partition_type][0])} {partition_type} uninfused morpheme samples')
+                  f'{len(infused_morph_samples[partition_type][0])} {partition_type} infused morpheme samples, '
+                  f'{len(uninfused_morph_samples[partition_type][0])} {partition_type} uninfused morpheme samples')
+
         token_samples, morph_samples, data_vocab = load_gold_data_samples(root_path, partition, la_name, tb_name)
         for partition_type in partition:
             print(f'{len(token_samples[partition_type][0])} {partition_type} token samples, '
