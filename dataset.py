@@ -207,11 +207,6 @@ def _load_vocab(data_vocab_dir_path):
         data_vocab_file_path = data_vocab_dir_path / f'{key}.txt'
         with open(str(data_vocab_file_path)) as f:
             entries = [line.strip() for line in f.readlines()]
-            if len(entries) >= np.iinfo(np.uint16).max:
-                raise Exception(f'Number of {key} entries {len(entries)} in vocab {data_vocab_file_path} exceeds max '
-                                f'allowed size for dtype.int16 {np.iinfo(np.int16).max}. This limitation is currently '
-                                f'set to get around running out of memory when slicing the dataframe into a '
-                                f'numpy array in _get_lattice_analysis_samples')
             entry2ids = {v: k for k, v in enumerate(entries)}
             data_vocab[key] = entries
             data_vocab[keys[key]] = entry2ids
@@ -326,6 +321,10 @@ def _get_token_samples(lattices_df, data_vocab):
 
     # num_sample (sent_idx.max()) may be greater than the actual number of samples if there are gaps in sent indices.
     # So we need to only keep the entries in the array that correspond to actual sentence indices.
+    # Note - this technique is memory intensive. When I applied this technique in _get_lattice_analysis_samples the
+    # memory consumption went up to 100GB. That is why I modified _get_lattice_analysis_samples to construct a single
+    # array with num_sample set to sent_idx.unique().size and manually loop over the data and fill it in order to avoid
+    # the slicing.
     return (token_samples[tokens_samples_df.sent_idx.unique() - 1],
             token_length_samples[tokens_samples_df.sent_idx.unique() - 1])
 
@@ -346,6 +345,9 @@ def _get_lattice_analysis_samples(lattice_df, data_vocab, max_morphemes, max_fea
     max_analyses = lattice_samples_df.analysis_idx.max() + 1
     morpheme_len = len(morpheme_column_names) + len(feat_column_names)
     samples_shape = (num_samples, max_len, max_analyses, max_morphemes, morpheme_len)
+
+    # https://stackoverflow.com/questions/54615882/how-to-convert-a-pandas-multiindex-dataframe-into-a-3d-array
+    # http://xarray.pydata.org/en/stable/
     lattice_analysis_samples = np.zeros(samples_shape, dtype=np.int)
     samples_df = lattice_samples_df.set_index(['sent_idx', 'token_idx', 'analysis_idx', 'morpheme_idx'])
     sid = -1
@@ -369,35 +371,6 @@ def _get_lattice_analysis_samples(lattice_df, data_vocab, max_morphemes, max_fea
             sid += 1
         tid = row[0][1] - 1
         lattice_analysis_length_samples[(sid, tid)] = row[1] + 1
-    # When building the Arabic PADT calima-star train set, the dataframe shape (6074, 302, 174, 4, 11)
-    # is causing the system to run out of memory when slicing the numpy array in the last line of this function.
-    # To get around it I am setting dtype=uint16 which limits the allowed values in each column to 65K.
-    # I'm also checking to make sure the all vocab entries are less then 65K in _load_vocab.
-    # lattice_analysis_samples = np.zeros((num_samples, max_len, max_analyses, max_morphemes, morpheme_len), dtype=np.int)
-    # lattice_analysis_samples = np.zeros((num_samples, max_len, max_analyses, max_morphemes, morpheme_len), dtype=np.uint16)
-    # sent_indices = lattice_samples_df['sent_idx'].values - 1
-    # token_indices = lattice_samples_df['token_idx'].values - 1
-    # analysis_indices = lattice_samples_df['analysis_idx'].values
-    # morpheme_indices = lattice_samples_df['morpheme_idx'].values
-    # sample_values = lattice_samples_df[morpheme_column_names + feat_column_names].to_numpy()
-    # lattice_analysis_samples[sent_indices, token_indices, analysis_indices, morpheme_indices] = sample_values
-
-    # Morpheme analysis lengths
-    # lattice_analysis_length_samples = np.zeros((num_samples, max_len), dtype=np.int)
-    # analysis_lengths_df = lattice_samples_df.groupby(['sent_idx', 'token_idx'])[['analysis_idx']].max().squeeze()
-    # sent_token_indices_values = analysis_lengths_df.index.values
-    # sample_length_values = analysis_lengths_df.values + 1
-    # sent_indices = [v[0] - 1 for v in sent_token_indices_values]
-    # token_indices = [v[1] - 1 for v in sent_token_indices_values]
-    # lattice_analysis_length_samples[sent_indices, token_indices] = sample_length_values
-
-    # num_sample (sent_idx.max()) may be greater than the actual number of samples if there are gaps in sent indices.
-    # So we need to only keep the entries in the array that correspond to actual sentence indices.
-    # sent_indices = lattice_samples_df.sent_idx.unique() - 1
-    # a = lattice_analysis_samples.take(sent_indices, axis=0)
-    # b = lattice_analysis_length_samples.take(sent_indices, axis=0)
-    # a = lattice_analysis_samples[np.unique(sent_indices)]
-    # b = lattice_analysis_length_samples[np.unique(sent_indices)]
     return lattice_analysis_samples, lattice_analysis_length_samples
 
 
