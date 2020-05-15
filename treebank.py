@@ -461,10 +461,10 @@ def _save_gold(tb_path, root_path, partition, lang, la_name, tb_name, tb_scheme,
     _save_data_lattices(root_path / la_name / tb_name, gold_dataset, 'gold')
 
 
-def _save_gold_morpheme_tag_type(root_path, partition, la_name, tb_name):
+def _save_gold_morpheme_tag_type(root_path, partition, la_name, tb_name, multi_tag_level):
     gold_dataset = _load_data_lattices(root_path / la_name / tb_name, partition, 'gold')
     _add_morpheme_type(gold_dataset)
-    _save_data_lattices(root_path / la_name / tb_name / 'seq', gold_dataset, 'gold-type')
+    _save_data_lattices(root_path / la_name / tb_name / 'seq' / f'{multi_tag_level}-multi-tag', gold_dataset, 'gold-type')
 
 
 # multi_tag_level = {'token': 'token-super-tag', 'morpheme-type': 'morpheme-type-multi-tag'}
@@ -473,8 +473,8 @@ def _save_gold_multi_tag(root_path, partition, la_name, tb_name, multi_tag_level
         gold_dataset = _load_data_lattices(root_path / la_name / tb_name, partition, 'gold')
         grouped_gold_dataset = _get_grouped_analysis_dataset(gold_dataset, _lattice_fields)
     else:
-        gold_dataset = _load_data_lattices(root_path / la_name / tb_name / 'seq', partition, 'gold-type')
-        grouped_gold_dataset = _get_grouped_morpheme_type_dataset(gold_dataset, _lattice_fields)
+        gold_type_dataset = _load_data_lattices(root_path / la_name / tb_name / 'seq' / f'{multi_tag_level}-multi-tag', partition, 'gold-type')
+        grouped_gold_dataset = _get_grouped_morpheme_type_dataset(gold_type_dataset, _lattice_fields)
     _save_data_lattices(root_path / la_name / tb_name / 'seq' / f'{multi_tag_level}-multi-tag', grouped_gold_dataset, f'gold-{multi_tag_level}')
 
 
@@ -538,32 +538,38 @@ def tb_load_uninfused_lattices(root_path, partition, la_name, tb_name, ma_name):
 
 
 def main():
-    scheme = 'UD'
-    # scheme = 'SPMRL'
+    # scheme = 'UD'
+    scheme = 'SPMRL'
     schemes = {'UD': 'UniversalDependencies', 'SPMRL': 'HebrewResources'}
     partition = ['dev', 'test', 'train']
     root_path = Path.home() / f'dev/aseker00/modi/tb/{scheme}'
     tb_path = Path.home() / f'dev/onlplab/{schemes[scheme]}'
-    langs = {'ar': 'Arabic', 'he': 'Hebrew', 'tr': 'Turkish'}
     if scheme == 'UD':
+        langs = {'ar': 'Arabic', 'he': 'Hebrew', 'tr': 'Turkish'}
         tb_names = {'ar': 'PADT', 'he': 'HTB', 'tr': 'IMST'}
         ma_names = {'ar': 'calima-star', 'he': 'heblex', 'tr': 'trmorph2'}
         # ma_names = {'ar': 'Apertium-E', 'he': 'Apertium', 'tr': 'ApertiumMA'}
         # ma_names = {'ar': 'baseline', 'he': 'baseline', 'tr': 'baseline'}
     else:
+        langs = {'he': 'Hebrew'}
         tb_names = {'he': 'HEBTB'}
+        # tb_names = {'he': 'HEBTBz'}
         ma_names = {'he': 'heblex'}
 
-    for la_name in ['ar']:
+    for la_name in langs:
         if la_name not in langs or la_name not in tb_names:
             continue
         lang = langs[la_name]
         tb_name = tb_names[la_name]
-        _save_gold(tb_path, root_path, partition, lang, la_name, tb_name, scheme)
-        _save_gold_multi_tag(root_path, partition, la_name, tb_name, 'token')
         if scheme == 'SPMRL':
-            _save_gold_morpheme_tag_type(root_path, partition, la_name, tb_name)
+            remove_zvl = tb_name[-1] == 'z'
+            _save_gold(tb_path, root_path, partition, lang, la_name, tb_name, scheme, remove_zvl)
+            _save_gold_multi_tag(root_path, partition, la_name, tb_name, 'token')
+            _save_gold_morpheme_tag_type(root_path, partition, la_name, tb_name, 'morpheme-type')
             _save_gold_multi_tag(root_path, partition, la_name, tb_name, 'morpheme-type')
+        else:
+            _save_gold(tb_path, root_path, partition, lang, la_name, tb_name, scheme)
+            _save_gold_multi_tag(root_path, partition, la_name, tb_name, 'token')
         if la_name not in ma_names:
             continue
         ma_name = ma_names[la_name]

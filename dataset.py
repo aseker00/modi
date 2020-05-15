@@ -701,21 +701,24 @@ def _save_lattice_ft_emb(root_path, ft_root_path, la_name, tb_name, ma_name):
 
 
 def main():
-    scheme = 'UD'
-    # scheme = 'SPMRL'
+    # scheme = 'UD'
+    scheme = 'SPMRL'
     partition = ['dev', 'test', 'train']
     root_path = Path.home() / f'dev/aseker00/modi/tb/{scheme}'
     ft_path = Path.home() / 'dev/aseker00/fastText'
     if scheme == 'UD':
+        langs = {'ar': 'Arabic', 'he': 'Hebrew', 'tr': 'Turkish'}
         tb_names = {'ar': 'PADT', 'he': 'HTB', 'tr': 'IMST'}
         ma_names = {'ar': 'calima-star', 'he': 'heblex', 'tr': 'trmorph2'}
         # ma_names = {'ar': 'Apertium-E', 'he': 'Apertium', 'tr': 'ApertiumMA'}
         # ma_names = {'ar': 'baseline', 'he': 'baseline', 'tr': 'baseline'}
     else:
-        tb_names = {'he': 'HEBTB'}
+        langs = {'he': 'Hebrew'}
+        # tb_names = {'he': 'HEBTB'}
+        tb_names = {'he': 'HEBTBz'}
         ma_names = {'he': 'heblex'}
 
-    for la_name in ['ar', 'he', 'tr']:
+    for la_name in langs:
         if la_name not in tb_names:
             continue
         tb_name = tb_names[la_name]

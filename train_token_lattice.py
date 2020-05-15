@@ -13,10 +13,10 @@ from pathlib import Path
 root_dir_path = Path.home() / 'dev/aseker00/modi'
 ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
 
-scheme = 'UD'
-# scheme = 'SPMRL'
-la_name = 'ar'
-# la_name = 'he'
+# scheme = 'UD'
+scheme = 'SPMRL'
+# la_name = 'ar'
+la_name = 'he'
 # la_name = 'tr'
 if la_name == 'tr':
     tb_name = 'IMST'
