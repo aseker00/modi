@@ -6,3 +6,4 @@ __pycache__/
 *.[0-9]*x
 tb/
 data/
+out/

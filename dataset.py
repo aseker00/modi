@@ -6,6 +6,7 @@ import fasttext_emb as ft
 import treebank as tb
 import numpy as np
 import pandas as pd
+import csv
 import os
 
 _to_form_vec = np.vectorize(lambda x, vocab: vocab['forms'][x])
@@ -651,6 +652,22 @@ def load_gold_multi_data_samples(root_path, partition, la_name, tb_name, multi_t
     morph_samples = {t: _get_fixed_analysis_samples(gold_dataset[t], data_vocab, max_morphemes[partition[-1]])
                         for t in gold_dataset}
     return token_samples, morph_samples, data_vocab
+
+
+def to_conllu_mono_lattice_str(tokens, analyses):
+    conllu_column_names = ['token_id', 'form', 'lemma', 'cpostag', 'upostag', 'feats', 'head', 'deprel', 'deps', 'misc']
+    rows = []
+    morph_id = 1
+    for token, analysis in zip(tokens, [analysis[analysis != '<PAD>'].reshape(analysis.shape[0], -1) for analysis in analyses]):
+        analysis = np.repeat(analysis, repeats=[1, 1, 2, 1], axis=0)
+        morphemes = analysis.T
+        if len(morphemes) > 1:
+            rows.append([f'{morph_id}-{morph_id + len(morphemes) - 1}', token] + ['_'] * 8)
+        for morpheme in morphemes:
+            rows.append([morph_id] + morpheme.tolist() + [morph_id - 1] + ['_'] * 3)
+            morph_id += 1
+    df = pd.DataFrame(rows, columns=conllu_column_names)
+    return df.to_csv(header=False, index=False, sep='\t', escapechar=None, quoting=csv.QUOTE_NONE)
 # API ##################################################################################################################
 
 
@@ -714,7 +731,6 @@ def main():
         # ma_names = {'ar': 'baseline', 'he': 'baseline', 'tr': 'baseline'}
     else:
         langs = {'he': 'Hebrew'}
-        # tb_names = {'he': 'HEBTB'}
         tb_names = {'he': 'HEBTBz'}
         ma_names = {'he': 'heblex'}
 

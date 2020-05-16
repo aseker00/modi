@@ -14,8 +14,8 @@ ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
 
 scheme = 'UD'
 # scheme = 'SPMRL'
-la_name = 'ar'
-# la_name = 'he'
+# la_name = 'ar'
+la_name = 'he'
 # la_name = 'tr'
 if la_name == 'ar':
     tb_name = 'PADT'
@@ -31,6 +31,8 @@ multi_tag_level = 'token'
 
 tb_root_dir_path = root_dir_path / 'tb' / scheme
 data_dir_path = root_dir_path / 'data' / scheme / la_name / tb_name / 'seq' / f'{multi_tag_level}-multi-tag'
+out_dir_path = root_dir_path / 'out' / scheme / la_name / tb_name / 'seq' / f'{multi_tag_level}-multi-tag'
+os.makedirs(str(out_dir_path), exist_ok=True)
 
 dev_set_path = data_dir_path / 'dev-inf.pth'
 test_set_path = data_dir_path / 'test-inf.pth'
@@ -74,6 +76,7 @@ else:
     torch.save(char_ft_emb, str(char_ft_emb_path))
     torch.save(token_ft_emb, str(token_ft_emb_path))
 
+# inf_train_set = TensorDataset(*[t[:100] for t in train_set.tensors])
 train_data = DataLoader(train_set, batch_size=1, shuffle=True)
 dev_data = DataLoader(dev_set, batch_size=1)
 test_data = DataLoader(test_set, batch_size=1)
@@ -82,9 +85,8 @@ test_data = DataLoader(test_set, batch_size=1)
 device = None
 num_tags = len(data_vocab['tags'])
 max_tag_seq_len = train_set.tensors[-1].shape[2]
-tag_emb = nn.Embedding(num_embeddings=num_tags, embedding_dim=100, padding_idx=0)
-token_char_emb = TokenCharEmbedding(token_ft_emb, char_ft_emb, 50)
-token_encoder = BatchEncoder(token_char_emb.embedding_dim, 300, 1, 0.0)
+token_char_emb = TokenCharEmbedding(token_ft_emb, char_ft_emb, 20)
+token_encoder = BatchEncoder(token_char_emb.embedding_dim, 200, 1, 0.0)
 tagger = FixedSequenceClassifier(token_char_emb, token_encoder, 0.0, max_tag_seq_len, num_tags)
 if device is not None:
     tagger.to(device)
@@ -132,6 +134,14 @@ def to_tag_ids(multi_tag_ids, num_token_tags):
     return ds.tags_to_tag_ids(tags, data_vocab)
 
 
+def save_samples(samples, out_file_path):
+    with open(str(out_file_path), 'w') as f:
+        for sample in samples:
+            lattice_str = ds.to_conllu_mono_lattice_str(sample[0], sample[-1])
+            f.write(lattice_str)
+            f.write('\n')
+
+
 def run_data(epoch, phase, data, print_every, model, optimizer=None):
     total_loss, print_loss = 0, 0
     total_samples, print_samples = [], []
@@ -174,18 +184,23 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
     print(f'epoch {epoch}, {phase} total loss: {total_loss / len(data)}')
     print_tag_metrics(total_samples, ['<PAD>'])
     print(ds.eval_samples(total_samples))
+    return total_samples
 
 
 # torch.autograd.set_detect_anomaly(True)
 lr = 1e-3
 adam = AdamW(tagger.parameters(), lr=lr)
-adam = ModelOptimizer(1, adam, list(tagger.parameters()), 0.0)
+adam = ModelOptimizer(1, adam, list(tagger.parameters()), 1.0)
 epochs = 3
 for i in trange(epochs, desc="Epoch"):
     epoch = i + 1
     tagger.train()
-    run_data(epoch, 'train', train_data, 320, tagger, adam)
+    run_data(epoch, 'train', train_data, 10, tagger, adam)
     tagger.eval()
     with torch.no_grad():
-        run_data(epoch, 'dev', dev_data, 32, tagger)
-        run_data(epoch, 'test', test_data, 32, tagger)
+        dev_samples = run_data(epoch, 'dev', dev_data, 32, tagger)
+        if scheme == 'UD':
+            save_samples(dev_samples, out_dir_path / f'dev-{epoch}.conllu')
+        test_samples = run_data(epoch, 'test', test_data, 32, tagger)
+        if scheme == 'UD':
+            save_samples(test_samples, out_dir_path / f'test-{epoch}.conllu')

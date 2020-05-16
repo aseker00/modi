@@ -13,30 +13,32 @@ from pathlib import Path
 root_dir_path = Path.home() / 'dev/aseker00/modi'
 ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
 
-# scheme = 'UD'
-scheme = 'SPMRL'
+scheme = 'UD'
+# scheme = 'SPMRL'
 # la_name = 'ar'
 la_name = 'he'
 # la_name = 'tr'
 if la_name == 'tr':
     tb_name = 'IMST'
-    # ma_name = 'trmorph2'
-    ma_name = 'ApertiumMA'
+    ma_name = 'trmorph2'
+    # ma_name = 'ApertiumMA'
 elif la_name == 'ar':
     tb_name = 'PADT'
-    # ma_name = 'calima-star'
-    ma_name = 'Apertium-E'
+    ma_name = 'calima-star'
+    # ma_name = 'Apertium-E'
 else:
     if scheme == 'UD':
         tb_name = 'HTB'
-        # ma_name = 'heblex'
-        ma_name = 'Apertium'
+        ma_name = 'heblex'
+        # ma_name = 'Apertium'
     else:
-        tb_name = 'HEBTB'
+        tb_name = 'HEBTBz'
         ma_name = 'heblex'
 
 tb_root_dir_path = root_dir_path / 'tb' / scheme
 data_dir_path = root_dir_path / 'data' / scheme / la_name / tb_name / 'lattice' / ma_name
+out_dir_path = root_dir_path / 'out' / scheme / la_name / tb_name / 'lattice' / ma_name
+os.makedirs(str(out_dir_path), exist_ok=True)
 
 inf_dev_set_path = data_dir_path / 'inf-dev.pth'
 inf_test_set_path = data_dir_path / 'inf-test.pth'
@@ -95,6 +97,7 @@ else:
     torch.save(form_ft_emb, form_ft_emb_path)
     torch.save(lemma_ft_emb, lemma_ft_emb_path)
 
+# inf_train_set = TensorDataset(*[t[:100] for t in inf_train_set.tensors])
 inf_train_data = DataLoader(inf_train_set, batch_size=1, shuffle=True)
 inf_dev_data = DataLoader(inf_dev_set, batch_size=1)
 inf_test_data = DataLoader(inf_test_set, batch_size=1)
@@ -105,12 +108,12 @@ uninf_test_data = DataLoader(uninf_test_set, batch_size=1)
 device = None
 num_tags = len(data_vocab['tags'])
 num_feats = len(data_vocab['feats'])
-tag_emb = nn.Embedding(num_embeddings=num_tags, embedding_dim=50, padding_idx=0)
-feats_emb = nn.Embedding(num_embeddings=num_feats, embedding_dim=50, padding_idx=0)
-token_char_emb = TokenCharEmbedding(token_ft_emb, char_ft_emb, 100)
+tag_emb = nn.Embedding(num_embeddings=num_tags, embedding_dim=20, padding_idx=0)
+feats_emb = nn.Embedding(num_embeddings=num_feats, embedding_dim=20, padding_idx=0)
+token_char_emb = TokenCharEmbedding(token_ft_emb, char_ft_emb, 20)
 num_morpheme_feats = inf_train_set.tensors[2].shape[-1] - 4
 lattice_emb = AnalysisEmbedding(form_ft_emb, lemma_ft_emb, tag_emb, feats_emb, num_morpheme_feats)
-lattice_encoder = nn.LSTM(input_size=lattice_emb.embedding_dim, hidden_size=300, num_layers=1, bidirectional=True, batch_first=True, dropout=0.0)
+lattice_encoder = nn.LSTM(input_size=lattice_emb.embedding_dim, hidden_size=200, num_layers=1, bidirectional=True, batch_first=True, dropout=0.0)
 analysis_decoder = nn.LSTM(input_size=token_char_emb.embedding_dim + lattice_emb.embedding_dim, hidden_size=lattice_encoder.hidden_size * 2, num_layers=1, batch_first=True, dropout=0.0)
 analysis_attn = SequenceStepAttention()
 sos = [data_vocab['form2id']['<SOS>'], data_vocab['lemma2id']['<SOS>'], data_vocab['tag2id']['<SOS>']] + [data_vocab['feats2id']['<SOS>']] * num_morpheme_feats
@@ -146,6 +149,14 @@ def to_token_lattice(lattice_ids, token_mask, analysis_indices):
     if scheme == 'UD':
         return ds.lattice_ids_to_ud_lattice(token_lattice_ids.detach().cpu().numpy(), data_vocab)
     return ds.lattice_ids_to_spmrl_lattice(token_lattice_ids.detach().cpu().numpy(), data_vocab)
+
+
+def save_samples(samples, out_file_path):
+    with open(str(out_file_path), 'w') as f:
+        for sample in samples:
+            lattice_str = ds.to_conllu_mono_lattice_str(sample[0], sample[-1])
+            f.write(lattice_str)
+            f.write('\n')
 
 
 def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_forcing=None):
@@ -216,13 +227,14 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
     print_tag_metrics(total_samples, ['<PAD>'])
     print(ds.eval_samples(total_samples))
     print(ds.seg_eval_samples(total_samples))
+    return total_samples
 
 
 # torch.autograd.set_detect_anomaly(True)
 # torch.backends.cudnn.enabled = False
 lr = 1e-3
 adam = AdamW(ptrnet.parameters(), lr=lr)
-adam = ModelOptimizer(1, adam, list(ptrnet.parameters()), 0.0)
+adam = ModelOptimizer(1, adam, list(ptrnet.parameters()), 1.0)
 epochs = 3
 for i in trange(epochs, desc="Epoch"):
     epoch = i + 1
@@ -231,7 +243,15 @@ for i in trange(epochs, desc="Epoch"):
     # run_data(epoch, 'train-uninf', uninf_train_data, 320, ptrnet, adam, 1.0)
     ptrnet.eval()
     with torch.no_grad():
-        run_data(epoch, 'dev-inf', inf_dev_data, 32, ptrnet)
-        run_data(epoch, 'test-inf', inf_test_data, 32, ptrnet)
-        run_data(epoch, 'dev-uninf', uninf_dev_data, 32, ptrnet)
-        run_data(epoch, 'test-uninf', uninf_test_data, 32, ptrnet)
+        dev_inf_samples = run_data(epoch, 'dev-inf', inf_dev_data, 32, ptrnet)
+        if scheme == 'UD':
+            save_samples(dev_inf_samples, out_dir_path / f'dev-inf-{epoch}.conllu')
+        test_inf_samples = run_data(epoch, 'test-inf', inf_test_data, 32, ptrnet)
+        if scheme == 'UD':
+            save_samples(test_inf_samples, out_dir_path / f'test-inf-{epoch}.conllu')
+        dev_uninf_samples = run_data(epoch, 'dev-uninf', uninf_dev_data, 32, ptrnet)
+        if scheme == 'UD':
+            save_samples(dev_uninf_samples, out_dir_path / f'dev-uninf-{epoch}.conllu')
+        test_uninf_samples = run_data(epoch, 'test-uninf', uninf_test_data, 32, ptrnet)
+        if scheme == 'UD':
+            save_samples(test_uninf_samples, out_dir_path / f'test-uninf-{epoch}.conllu')

@@ -11,8 +11,8 @@ from pathlib import Path
 root_dir_path = Path.home() / 'dev/aseker00/modi'
 ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
 
-# scheme = 'UD'
-scheme = 'SPMRL'
+scheme = 'UD'
+# scheme = 'SPMRL'
 # la_name = 'ar'
 la_name = 'he'
 # la_name = 'tr'
@@ -28,6 +28,8 @@ else:
 
 tb_root_dir_path = root_dir_path / 'tb' / scheme
 data_dir_path = root_dir_path / 'data' /scheme / la_name / tb_name
+out_dir_path = root_dir_path / 'out' / scheme / la_name / tb_name
+os.makedirs(str(out_dir_path), exist_ok=True)
 
 dev_set_path = data_dir_path / 'dev-inf.pth'
 test_set_path = data_dir_path / 'test-inf.pth'
@@ -65,6 +67,7 @@ else:
     torch.save(char_ft_emb, str(char_ft_emb_path))
     torch.save(token_ft_emb, str(token_ft_emb_path))
 
+# inf_train_set = TensorDataset(*[t[:100] for t in train_set.tensors])
 train_data = DataLoader(train_set, batch_size=1, shuffle=True)
 dev_data = DataLoader(dev_set, batch_size=1)
 test_data = DataLoader(test_set, batch_size=1)
@@ -72,9 +75,9 @@ test_data = DataLoader(test_set, batch_size=1)
 device = None
 num_tags = len(data_vocab['tags'])
 max_tag_seq_len = train_set.tensors[-1].shape[2]
-tag_emb = nn.Embedding(num_embeddings=num_tags, embedding_dim=100, padding_idx=0)
-token_char_emb = TokenCharEmbedding(token_ft_emb, char_ft_emb, 50)
-token_encoder = nn.LSTM(input_size=token_char_emb.embedding_dim, hidden_size=300, num_layers=1, bidirectional=True, batch_first=True, dropout=0.0)
+tag_emb = nn.Embedding(num_embeddings=num_tags, embedding_dim=20, padding_idx=0)
+token_char_emb = TokenCharEmbedding(token_ft_emb, char_ft_emb, 20)
+token_encoder = nn.LSTM(input_size=token_char_emb.embedding_dim, hidden_size=200, num_layers=1, bidirectional=True, batch_first=True, dropout=0.0)
 tag_decoder = SequenceStepDecoder(token_char_emb.embedding_dim + tag_emb.embedding_dim, token_encoder.hidden_size * 2, 1, 0.0, num_tags)
 sos = torch.tensor([data_vocab['tag2id']['<SOS>']], dtype=torch.long, device=device)
 eot = torch.tensor([data_vocab['tag2id']['<EOT>']], dtype=torch.long, device=device)
@@ -92,6 +95,14 @@ def to_token_lattice(tag_ids, token_mask):
 
 def to_tokens(token_ids, token_mask):
     return ds.token_ids_to_tokens(token_ids, token_mask, data_vocab)
+
+
+def save_samples(samples, out_file_path):
+    with open(str(out_file_path), 'w') as f:
+        for sample in samples:
+            lattice_str = ds.to_conllu_mono_lattice_str(sample[0], sample[-1])
+            f.write(lattice_str)
+            f.write('\n')
 
 
 def run_data(epoch, phase, data, print_every, model, optimizer=None):
@@ -133,12 +144,13 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
     print(f'epoch {epoch}, {phase} total loss: {total_loss / len(data)}')
     print_tag_metrics(total_samples, ['<PAD>'])
     print(ds.eval_samples(total_samples))
+    return total_samples
 
 
 # torch.autograd.set_detect_anomaly(True)
 lr = 1e-3
 adam = AdamW(s2s.parameters(), lr=lr)
-adam = ModelOptimizer(1, adam, list(s2s.parameters()), 0.0)
+adam = ModelOptimizer(1, adam, list(s2s.parameters()), 1.0)
 epochs = 3
 for i in trange(epochs, desc="Epoch"):
     epoch = i + 1
@@ -146,5 +158,9 @@ for i in trange(epochs, desc="Epoch"):
     run_data(epoch, 'train', train_data, 320, s2s, adam)
     s2s.eval()
     with torch.no_grad():
-        run_data(epoch, 'dev', dev_data, 32, s2s)
-        run_data(epoch, 'test', test_data, 32, s2s)
+        dev_samples = run_data(epoch, 'dev', dev_data, 32, s2s)
+        if scheme == 'UD':
+            save_samples(dev_samples, out_dir_path / f'dev-{epoch}.conllu')
+        test_samples = run_data(epoch, 'test', test_data, 32, s2s)
+        if scheme == 'UD':
+            save_samples(test_samples, out_dir_path / f'test-{epoch}.conllu')
