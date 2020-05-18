@@ -120,6 +120,12 @@ class ModelOptimizer:
 
     def _step(self):
         if self.max_grad_norm > 0:
+            total_norm = 0
+            for p in self.parameters:
+                param_norm = p.grad.data.norm(2)
+                total_norm += param_norm.item() ** 2
+            total_norm = total_norm ** (1. / 2)
+            print(total_norm)
             nn.utils.clip_grad_norm_(parameters=self.parameters, max_norm=self.max_grad_norm)
         self.optimizer.step()
         self.optimizer.zero_grad()

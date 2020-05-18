@@ -6,9 +6,10 @@ from torchcrf import CRF
 
 class TokenCharEmbedding(nn.Module):
 
-    def __init__(self, token_emb, char_emb, char_hidden_dim):
+    def __init__(self, token_emb, token_dropout, char_emb, char_hidden_dim):
         super(TokenCharEmbedding, self).__init__()
         self.token_emb = token_emb
+        self.token_dropout = nn.Dropout(token_dropout)
         self.char_emb = char_emb
         self.char_lstm = nn.LSTM(input_size=self.char_emb.embedding_dim, hidden_size=char_hidden_dim, batch_first=True)
 
@@ -25,6 +26,7 @@ class TokenCharEmbedding(nn.Module):
         char_outputs = char_outputs[torch.arange(char_outputs.shape[0]), char_lengths.view(-1) - 1]
         char_outputs = char_outputs.view(batch_size, token_seq_length, -1)
         embed_tokens = self.token_emb(token_seq)
+        embed_tokens = self.token_dropout(embed_tokens)
         embed_tokens = torch.cat((embed_tokens, char_outputs), dim=2)
         return embed_tokens
 

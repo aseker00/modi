@@ -9,6 +9,7 @@ from tag_models import *
 from utils import *
 import os
 
+
 from pathlib import Path
 root_dir_path = Path.home() / 'dev/aseker00/modi'
 ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
@@ -98,7 +99,7 @@ else:
     torch.save(lemma_ft_emb, lemma_ft_emb_path)
 
 # inf_train_set = TensorDataset(*[t[:100] for t in inf_train_set.tensors])
-inf_train_data = DataLoader(inf_train_set, batch_size=1, shuffle=True)
+inf_train_data = DataLoader(inf_train_set, batch_size=1, shuffle=False)
 inf_dev_data = DataLoader(inf_dev_set, batch_size=1)
 inf_test_data = DataLoader(inf_test_set, batch_size=1)
 # uninf_train_data = DataLoader(uninf_train_set, batch_size=1, shuffle=False)
@@ -110,8 +111,11 @@ num_tags = len(data_vocab['tags'])
 num_feats = len(data_vocab['feats'])
 tag_emb = nn.Embedding(num_embeddings=num_tags, embedding_dim=20, padding_idx=0)
 feats_emb = nn.Embedding(num_embeddings=num_feats, embedding_dim=20, padding_idx=0)
-token_char_emb = TokenCharEmbedding(token_ft_emb, char_ft_emb, 20)
+token_char_emb = TokenCharEmbedding(token_ft_emb, 0.7, char_ft_emb, 20)
+
+# dataset::_get_lattice_analysis_samples: morpheme_column_names = ['is_gold', 'form_id', 'lemma_id', 'tag_id']
 num_morpheme_feats = inf_train_set.tensors[2].shape[-1] - 4
+
 lattice_emb = AnalysisEmbedding(form_ft_emb, lemma_ft_emb, tag_emb, feats_emb, num_morpheme_feats)
 lattice_encoder = nn.LSTM(input_size=lattice_emb.embedding_dim, hidden_size=200, num_layers=1, bidirectional=True, batch_first=True, dropout=0.0)
 analysis_decoder = nn.LSTM(input_size=token_char_emb.embedding_dim + lattice_emb.embedding_dim, hidden_size=lattice_encoder.hidden_size * 2, num_layers=1, batch_first=True, dropout=0.0)
@@ -124,9 +128,7 @@ if device is not None:
 print(ptrnet)
 
 
-def pack_lattice(lattice_ids, mask, indices):
-    morpheme_size = lattice_ids.shape[-1]
-    analysis_size = lattice_ids.shape[-2]
+def mask_lattice_indices(lattice_ids, mask, indices):
     # TODO: Remove condition once the pred_indices and gold_indices have the same shape [batch_size, token_seq_size]
     if indices.shape == mask.shape:
         # Gold indices (shape is [batch_size, token_seq_size], so needs to be masked)
@@ -135,6 +137,13 @@ def pack_lattice(lattice_ids, mask, indices):
         # Pred indices (already masked by the model)
         indices = indices.squeeze(0)
     lattice_ids = lattice_ids[mask]
+    return lattice_ids, indices
+
+
+def disambiguate_lattice(lattice_ids, indices):
+    morpheme_size = lattice_ids.shape[-1]
+    analysis_size = lattice_ids.shape[-2]
+    # lattice_ids, indices = mask_lattice_indices(lattice_ids, mask, indices)
     index = indices.unsqueeze(-1).repeat(1, analysis_size).unsqueeze(-1).repeat(1, 1, morpheme_size).unsqueeze(1)
     # gather: [n, a, m, 10] -> [n, 1, m, 10]
     # n - token seq len
@@ -144,28 +153,33 @@ def pack_lattice(lattice_ids, mask, indices):
     return torch.gather(lattice_ids, 1, index).squeeze(1)
 
 
-def to_token_lattice(lattice_ids, token_mask, analysis_indices):
-    token_lattice_ids = pack_lattice(lattice_ids, token_mask, analysis_indices)
+def to_monosemous_lattice(lattice_ids, token_mask, analysis_indices):
+    lattice_ids, analysis_indices = mask_lattice_indices(lattice_ids, token_mask, analysis_indices)
+    lattice_ids = disambiguate_lattice(lattice_ids, analysis_indices)
+    lattice_ids = lattice_ids.detach().cpu().numpy()
     if scheme == 'UD':
-        return ds.lattice_ids_to_ud_lattice(token_lattice_ids.detach().cpu().numpy(), data_vocab)
-    return ds.lattice_ids_to_spmrl_lattice(token_lattice_ids.detach().cpu().numpy(), data_vocab)
+        return ds.lattice_ids_to_ud_lattice(lattice_ids, data_vocab)
+    return ds.lattice_ids_to_spmrl_lattice(lattice_ids, data_vocab)
 
 
-def save_samples(samples, out_file_path):
-    with open(str(out_file_path), 'w') as f:
-        for sample in samples:
-            lattice_str = ds.to_conllu_mono_lattice_str(sample[0], sample[-1])
-            f.write(lattice_str)
-            f.write('\n')
+def to_ambiguous_lattice(tokens, lattice_ids, lattice_ids_mask, gold_indices):
+    lattice_ids, analysis_indices = mask_lattice_indices(lattice_ids, lattice_ids_mask.any(axis=2), gold_indices)
+    lattice_ids = lattice_ids.detach().cpu().numpy()
+    gold_indices = gold_indices.detach().cpu().numpy()
+    return ds.to_lattice_sample(tokens, lattice_ids, gold_indices, data_vocab,
+                                ds.lattice_ids_to_ud_lattice if scheme == 'UD' else ds.lattice_ids_to_spmrl_lattice)
 
 
 def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_forcing=None):
     total_loss, print_loss = 0, 0
     total_samples, print_samples = [], []
+    total_lattices = []
     for i, batch in enumerate(data):
         batch = tuple(t.to(device) for t in batch)
         b_token_ids = batch[0]
         b_token_lengths = batch[1]
+
+        # Training lattice
         b_is_gold = batch[2][:, :, :, 0, 0]
         b_gold_indices = torch.ones((b_is_gold.shape[0], b_is_gold.shape[1]), dtype=torch.long, device=device) * (-1)
         for idx in b_is_gold.nonzero():
@@ -173,12 +187,13 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
         b_lattice_ids = batch[2][:, :, :, :, 1:]
         b_analysis_lengths = batch[3]
 
-        # Infused gold lattices - evaluation only
+        # Evaluation lattice
         b_eval_is_gold = batch[4][:, :, :, 0, 0]
-        b_eval_lattice_ids = batch[4][:, :, :, :, 1:]
-        b_eval_gold_indices = torch.ones((b_eval_is_gold.shape[0], b_eval_is_gold.shape[1]), dtype=torch.long, device=device) * (-1)
+        b_eval_gold_indices = torch.ones((b_eval_is_gold.shape[0], b_eval_is_gold.shape[1]), dtype=torch.long,
+                                         device=device) * (-1)
         for idx in b_eval_is_gold.nonzero():
             b_eval_gold_indices[idx[0], idx[1]] = idx[2]
+        b_eval_lattice_ids = batch[4][:, :, :, :, 1:]
 
         b_token_mask = b_token_ids[:, :, 0, 0] != 0
         b_batch_size = b_lattice_ids.shape[0]
@@ -206,10 +221,13 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
         # b_gold_indices = b_gold_indices.detach().cpu().numpy()
         # b_pred_indices = b_pred_indices.detach().cpu().numpy()
 
-        eval_gold_token_lattice = to_token_lattice(b_eval_lattice_ids, b_token_mask, b_eval_gold_indices)
-        eval_pred_token_lattice = to_token_lattice(b_lattice_ids, b_token_mask, b_pred_indices)
-        print_samples.append((gold_tokens, eval_gold_token_lattice, eval_pred_token_lattice))
-        total_samples.append((gold_tokens, eval_gold_token_lattice, eval_pred_token_lattice))
+        amb_lattice = to_ambiguous_lattice(gold_tokens, b_lattice_ids, b_lattice_mask, b_pred_indices)
+        total_lattices.append(amb_lattice)
+
+        eval_gold_lattice = to_monosemous_lattice(b_eval_lattice_ids, b_token_mask, b_eval_gold_indices)
+        eval_pred_lattice = to_monosemous_lattice(b_lattice_ids, b_token_mask, b_pred_indices)
+        print_samples.append((gold_tokens, eval_gold_lattice, eval_pred_lattice))
+        total_samples.append((gold_tokens, eval_gold_lattice, eval_pred_lattice))
 
         if optimizer is not None:
             optimizer.step([b_loss])
@@ -227,14 +245,14 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
     print_tag_metrics(total_samples, ['<PAD>'])
     print(ds.eval_samples(total_samples))
     print(ds.seg_eval_samples(total_samples))
-    return total_samples
+    return total_samples, total_lattices
 
 
 # torch.autograd.set_detect_anomaly(True)
 # torch.backends.cudnn.enabled = False
 lr = 1e-3
 adam = AdamW(ptrnet.parameters(), lr=lr)
-adam = ModelOptimizer(1, adam, list(ptrnet.parameters()), 1.0)
+adam = ModelOptimizer(10, adam, list(ptrnet.parameters()), 0.0)
 epochs = 3
 for i in trange(epochs, desc="Epoch"):
     epoch = i + 1
@@ -243,15 +261,19 @@ for i in trange(epochs, desc="Epoch"):
     # run_data(epoch, 'train-uninf', uninf_train_data, 320, ptrnet, adam, 1.0)
     ptrnet.eval()
     with torch.no_grad():
-        dev_inf_samples = run_data(epoch, 'dev-inf', inf_dev_data, 32, ptrnet)
+        samples, lattices = run_data(epoch, 'dev-inf', inf_dev_data, 32, ptrnet)
         if scheme == 'UD':
-            save_samples(dev_inf_samples, out_dir_path / f'dev-inf-{epoch}.conllu')
-        test_inf_samples = run_data(epoch, 'test-inf', inf_test_data, 32, ptrnet)
+            ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-dev.conllu')
+            ds.save_as_lattice_samples(lattices, out_dir_path / f'e{epoch}-dev.lattices.csv')
+        samples, lattices = run_data(epoch, 'test-inf', inf_test_data, 32, ptrnet)
         if scheme == 'UD':
-            save_samples(test_inf_samples, out_dir_path / f'test-inf-{epoch}.conllu')
-        dev_uninf_samples = run_data(epoch, 'dev-uninf', uninf_dev_data, 32, ptrnet)
+            ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-test.conllu')
+            ds.save_as_lattice_samples(lattices, out_dir_path / f'e{epoch}-test.lattices.csv')
+        samples, lattices = run_data(epoch, 'dev-uninf', uninf_dev_data, 32, ptrnet)
         if scheme == 'UD':
-            save_samples(dev_uninf_samples, out_dir_path / f'dev-uninf-{epoch}.conllu')
-        test_uninf_samples = run_data(epoch, 'test-uninf', uninf_test_data, 32, ptrnet)
+            ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-dev-uninf.conllu')
+            ds.save_as_lattice_samples(lattices, out_dir_path / f'e{epoch}-dev-uninf.lattices.csv')
+        samples, lattices = run_data(epoch, 'test-uninf', uninf_test_data, 32, ptrnet)
         if scheme == 'UD':
-            save_samples(test_uninf_samples, out_dir_path / f'test-uninf-{epoch}.conllu')
+            ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-test-uninf.conllu')
+            ds.save_as_lattice_samples(lattices, out_dir_path / f'e{epoch}-test-uninf.lattices.csv')

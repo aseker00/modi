@@ -266,15 +266,14 @@ def _to_tokens_row_values(lattice_data_row, data_vocab, token_char_ids):
             for i, char_id in enumerate(char_ids)]
 
 
-def _to_lattice_row_values(lattice_data_row, max_num_feats, data_vocab, infuse):
+def _to_lattice_row_values(lattice_data_row, max_num_feats, data_vocab):
     form_id = data_vocab['form2id'][str(lattice_data_row.form)]
     lemma_id = data_vocab['lemma2id'][str(lattice_data_row.lemma)]
     tag_id = data_vocab['tag2id'][str(lattice_data_row.tag)]
     feat_ids = [data_vocab['feats2id'][f] for f in str(lattice_data_row.feats).split('|')]
     feat_ids += [data_vocab['feats2id']['_']] * (max_num_feats - len(feat_ids))
-    values = [lattice_data_row.sent_id, lattice_data_row.token_id, lattice_data_row.analysis_id,
-              lattice_data_row.morpheme_id]
-    values += [lattice_data_row.is_gold and (infuse or not lattice_data_row.is_inf)]
+    values = [lattice_data_row.sent_id, lattice_data_row.token_id, lattice_data_row.analysis_id, lattice_data_row.morpheme_id]
+    values += [lattice_data_row.is_gold]
     values += [form_id, lemma_id, tag_id]
     values += feat_ids
     return values
@@ -296,7 +295,7 @@ def _get_token_samples(lattices_df, data_vocab):
     token_char_ids = {}
     column_names = ['sent_idx', 'token_idx', 'char_idx', 'token_id', 'char_id']
     token_row_values = [_to_tokens_row_values(lattice_data_row, data_vocab, token_char_ids)
-                       for lattice_data_row in lattices_df.itertuples()]
+                        for lattice_data_row in lattices_df.itertuples()]
     tokens_samples_df = pd.DataFrame([token_row for sent_token_rows in token_row_values
                                       for token_row in sent_token_rows], columns=column_names)
 
@@ -330,12 +329,12 @@ def _get_token_samples(lattices_df, data_vocab):
             token_length_samples[tokens_samples_df.sent_idx.unique() - 1])
 
 
-def _get_lattice_analysis_samples(lattice_df, data_vocab, max_morphemes, max_feats_len, infuse=True):
+def _get_lattice_analysis_samples(lattice_df, data_vocab, max_morphemes, max_feats_len):
     indices_column_names = ['sent_idx', 'token_idx', 'analysis_idx', 'morpheme_idx']
     morpheme_column_names = ['is_gold', 'form_id', 'lemma_id', 'tag_id']
     feat_column_names = [f'feat{i+1}_id' for i in range(max_feats_len)]
     column_names = indices_column_names + morpheme_column_names + feat_column_names
-    lattice_values = [_to_lattice_row_values(lattice_data_row, max_feats_len, data_vocab, infuse)
+    lattice_values = [_to_lattice_row_values(lattice_data_row, max_feats_len, data_vocab)
                       for lattice_data_row in lattice_df.itertuples()]
     lattice_samples_df = pd.DataFrame(lattice_values, columns=column_names)
 
@@ -537,8 +536,10 @@ def _ud_feats_to_str(feats):
             if morpheme_feats.size == 1:
                 token_feat_str_rows.append(morpheme_feats.item())
                 continue
-            morpheme_feats_dict = {f[0]: f[1] for f in [f.split("=") for f in morpheme_feats[morpheme_feats != '_']]}
-            s = [f'{feat_name}={morpheme_feats_dict[feat_name]}' for feat_name in morpheme_feats_dict]
+            morpheme_feats_dict = defaultdict(list)
+            for f in [f.split("=") for f in morpheme_feats[morpheme_feats != '_']]:
+                morpheme_feats_dict[f[0]].append(f[1])
+            s = [f'{name}={value}' for name in morpheme_feats_dict for value in morpheme_feats_dict[name]]
             token_feat_str_rows.append('|'.join(s))
         feat_str_rows.append(np.array(token_feat_str_rows))
     return np.stack(feat_str_rows)
@@ -668,6 +669,53 @@ def to_conllu_mono_lattice_str(tokens, analyses):
             morph_id += 1
     df = pd.DataFrame(rows, columns=conllu_column_names)
     return df.to_csv(header=False, index=False, sep='\t', escapechar=None, quoting=csv.QUOTE_NONE)
+
+
+def to_lattice_sample(tokens, lattice_ids, gold_indices, data_vocab, lattice_id_to_lattice_func):
+    lattice_gold_indices = gold_indices.reshape(-1)[:, None].repeat(lattice_ids.shape[1], 1).transpose()
+    # lattice_is_inf = is_inf.repeat(7).repeat(4).reshape(is_inf.shape[1], is_inf.shape[2], 7, 4)
+    lattice_tokens = tokens[:, None].repeat(lattice_ids.shape[1], 1).transpose()
+    lattice_analyses = []
+    for i in range(lattice_ids.shape[1]):
+        analyses = lattice_id_to_lattice_func(lattice_ids[:, i], data_vocab)
+        lattice_analyses.append(analyses)
+    lattice_analyses = np.stack(lattice_analyses, axis=1).transpose((0, 1, 3, 2))
+    lattice_analyses_mask = (lattice_analyses != '<PAD>').nonzero()
+    lattice_analyses = lattice_analyses[lattice_analyses_mask[0], lattice_analyses_mask[1],
+                                        lattice_analyses_mask[2], lattice_analyses_mask[3]]
+    lattice_analyses = lattice_analyses.reshape(-1, 4)
+    lattice_analyses_mask = [mask.reshape(-1, 4)[:, 0] for mask in lattice_analyses_mask]
+
+    lattice_analyses_from_indices = np.zeros((lattice_analyses.shape[0], 1), dtype=np.int)
+    lattice_analyses_to_indices = np.ones((lattice_analyses.shape[0], 1), dtype=np.int)
+    lattice_analyses_token_indices = lattice_analyses_mask[0] + 1
+    lattice_analyses_analysis_indices = lattice_analyses_mask[1]
+    lattice_analyses_morpheme_indices = lattice_analyses_mask[2]
+    lattice_analyses_gold_indices = lattice_gold_indices[lattice_analyses_mask[1], lattice_analyses_mask[0]]
+    lattice_analyses_is_gold = lattice_analyses_analysis_indices == lattice_analyses_gold_indices
+    lattice_analyses_tokens = lattice_tokens[lattice_analyses_mask[1], lattice_analyses_mask[0]]
+
+    lattice = np.concatenate([lattice_analyses_from_indices, lattice_analyses_to_indices, lattice_analyses,
+                              lattice_analyses_token_indices[:, None], lattice_analyses_tokens[:, None],
+                              lattice_analyses_is_gold[:, None], lattice_analyses_analysis_indices[:, None],
+                              lattice_analyses_morpheme_indices[:, None]],
+                             axis=1)
+    return lattice
+
+
+def save_as_conllu(samples, out_file_path):
+    with open(str(out_file_path), 'w') as f:
+        for sample in samples:
+            lattice_str = to_conllu_mono_lattice_str(sample[0], sample[-1])
+            f.write(lattice_str)
+            f.write('\n')
+
+
+def save_as_lattice_samples(lattices, out_file_path):
+    lattices = [np.concatenate([np.full((lattice.shape[0], 1), i + 1, dtype=np.int), lattice], axis=1) for i, lattice in
+                enumerate(lattices)]
+    df = pd.DataFrame(np.concatenate(lattices))
+    df.to_csv(out_file_path)
 # API ##################################################################################################################
 
 
