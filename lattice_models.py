@@ -4,10 +4,12 @@ import torch.nn as nn
 
 class MorphEmbedding(nn.Module):
 
-    def __init__(self, form_emb, lemma_emb, tag_emb, feats_emb, num_feats):
+    def __init__(self, form_emb, form_dropout, lemma_emb, lemma_dropout, tag_emb, feats_emb, num_feats):
         super(MorphEmbedding, self).__init__()
         self.form_emb = form_emb
+        self.form_dropout = nn.Dropout(form_dropout)
         self.lemma_emb = lemma_emb
+        self.lemma_dropout = nn.Dropout(lemma_dropout)
         self.tag_emb = tag_emb
         self.feats_emb = feats_emb
         self.embedding_dim = sum([emb.embedding_dim for emb in [form_emb, lemma_emb, tag_emb]])
@@ -19,7 +21,9 @@ class MorphEmbedding(nn.Module):
         tags = lattices[:, :, :, :, 2]
         feats = lattices[:, :, :, :, 3:]
         embedded_forms = self.form_emb(forms)
+        embedded_forms = self.form_dropout(embedded_forms)
         embedded_lemmas = self.lemma_emb(lemmas)
+        embedded_lemmas = self.lemma_dropout(embedded_lemmas)
         embedded_tags = self.tag_emb(tags)
         embedded_feats = self.feats_emb(feats)
         embedded_feats = embedded_feats.view(lattices.shape[0], lattices.shape[1], -1, embedded_feats.shape[2])
@@ -29,8 +33,8 @@ class MorphEmbedding(nn.Module):
 
 class AnalysisEmbedding(MorphEmbedding):
 
-    def __init__(self, form_emb, lemma_emb, tag_emb, feats_emb, num_feats):
-        super(AnalysisEmbedding, self).__init__(form_emb, lemma_emb, tag_emb, feats_emb, num_feats)
+    def __init__(self, form_emb, form_dropout, lemma_emb, lemma_dropout, tag_emb, feats_emb, num_feats):
+        super(AnalysisEmbedding, self).__init__(form_emb, form_dropout, lemma_emb, lemma_dropout, tag_emb, feats_emb, num_feats)
 
     def forward(self, lattices):
         forms = lattices[:, :, :, :, 0]
@@ -38,7 +42,9 @@ class AnalysisEmbedding(MorphEmbedding):
         tags = lattices[:, :, :, :, 2]
         feats = lattices[:, :, :, :, 3:]
         embedded_forms = self.form_emb(forms).mean(dim=-2)
+        embedded_forms = self.form_dropout(embedded_forms)
         embedded_lemmas = self.lemma_emb(lemmas).mean(dim=-2)
+        embedded_lemmas = self.lemma_dropout(embedded_lemmas)
         embedded_tags = self.tag_emb(tags).mean(dim=-2)
         embedded_feats = self.feats_emb(feats).mean(dim=-3).view(feats.shape[0], feats.shape[1], feats.shape[2], -1)
         return torch.cat([embedded_forms, embedded_lemmas, embedded_tags, embedded_feats], dim=-1)
@@ -67,7 +73,7 @@ class LatticeTokenPtrNet(nn.Module):
 
     def forward(self, lattice, lattice_mask, inputs, input_lengths, gold_indices=None):
         embed_lattice = self.lattice_emb(lattice)
-        embed_inputs = self.input_emb(inputs, input_lengths)
+        embed_inputs = self.input_emb(inputs, input_lengths) if inputs is not None else None
         # embed_lattice = self.get_embed_input_lattice(embed_lattice, embed_inputs)
         batch_size = embed_lattice.shape[0]
         enc_lattice, hidden_state = self.forward_lattice_encode(embed_lattice, lattice_mask)

@@ -99,7 +99,7 @@ else:
     torch.save(lemma_ft_emb, lemma_ft_emb_path)
 
 # inf_train_set = TensorDataset(*[t[:100] for t in inf_train_set.tensors])
-inf_train_data = DataLoader(inf_train_set, batch_size=1, shuffle=False)
+inf_train_data = DataLoader(inf_train_set, batch_size=1, shuffle=True)
 inf_dev_data = DataLoader(inf_dev_set, batch_size=1)
 inf_test_data = DataLoader(inf_test_set, batch_size=1)
 # uninf_train_data = DataLoader(uninf_train_set, batch_size=1, shuffle=False)
@@ -111,18 +111,19 @@ num_tags = len(data_vocab['tags'])
 num_feats = len(data_vocab['feats'])
 tag_emb = nn.Embedding(num_embeddings=num_tags, embedding_dim=20, padding_idx=0)
 feats_emb = nn.Embedding(num_embeddings=num_feats, embedding_dim=20, padding_idx=0)
-token_char_emb = TokenCharEmbedding(token_ft_emb, 0.7, char_ft_emb, 20)
+# token_char_emb = TokenCharEmbedding(token_ft_emb, 0.7, char_ft_emb, 20)
 
 # dataset::_get_lattice_analysis_samples: morpheme_column_names = ['is_gold', 'form_id', 'lemma_id', 'tag_id']
 num_morpheme_feats = inf_train_set.tensors[2].shape[-1] - 4
 
-lattice_emb = AnalysisEmbedding(form_ft_emb, lemma_ft_emb, tag_emb, feats_emb, num_morpheme_feats)
+lattice_emb = AnalysisEmbedding(form_ft_emb, 0.7, lemma_ft_emb, 0.7, tag_emb, feats_emb, num_morpheme_feats)
 lattice_encoder = nn.LSTM(input_size=lattice_emb.embedding_dim, hidden_size=200, num_layers=1, bidirectional=True, batch_first=True, dropout=0.0)
-analysis_decoder = nn.LSTM(input_size=token_char_emb.embedding_dim + lattice_emb.embedding_dim, hidden_size=lattice_encoder.hidden_size * 2, num_layers=1, batch_first=True, dropout=0.0)
+# analysis_decoder = nn.LSTM(input_size=token_char_emb.embedding_dim + lattice_emb.embedding_dim, hidden_size=lattice_encoder.hidden_size * 2, num_layers=1, batch_first=True, dropout=0.0)
+analysis_decoder = nn.LSTM(input_size=lattice_emb.embedding_dim, hidden_size=lattice_encoder.hidden_size * 2, num_layers=1, batch_first=True, dropout=0.0)
 analysis_attn = SequenceStepAttention()
 sos = [data_vocab['form2id']['<SOS>'], data_vocab['lemma2id']['<SOS>'], data_vocab['tag2id']['<SOS>']] + [data_vocab['feats2id']['<SOS>']] * num_morpheme_feats
 sos = torch.tensor(sos, dtype=torch.long, device=device)
-ptrnet = LatticeTokenPtrNet(lattice_emb, token_char_emb, lattice_encoder, analysis_decoder, analysis_attn, sos)
+ptrnet = LatticeTokenPtrNet(lattice_emb, None, lattice_encoder, analysis_decoder, analysis_attn, sos)
 if device is not None:
     ptrnet.to(device)
 print(ptrnet)
@@ -205,9 +206,11 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
         teach = optimizer is not None and (teacher_forcing is None or random.uniform(0, 1) < teacher_forcing)
         # TODO: Change model to return scores in the same shape as tokens [batch_size, tokens_seq_size]?
         if teach:
-            b_scores = model(b_lattice_ids, b_lattice_mask, b_token_ids, b_token_lengths, b_gold_indices)
+            # b_scores = model(b_lattice_ids, b_lattice_mask, b_token_ids, b_token_lengths, b_gold_indices)
+            b_scores = model(b_lattice_ids, b_lattice_mask, None, b_token_lengths, b_gold_indices)
         else:
-            b_scores = model(b_lattice_ids, b_lattice_mask, b_token_ids, b_token_lengths)
+            # b_scores = model(b_lattice_ids, b_lattice_mask, b_token_ids, b_token_lengths)
+            b_scores = model(b_lattice_ids, b_lattice_mask, None, b_token_lengths)
         b_loss = model.loss(b_scores, b_gold_indices, b_token_mask)
         print_loss += b_loss
         total_loss += b_loss
@@ -252,7 +255,7 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
 # torch.backends.cudnn.enabled = False
 lr = 1e-3
 adam = AdamW(ptrnet.parameters(), lr=lr)
-adam = ModelOptimizer(10, adam, list(ptrnet.parameters()), 0.0)
+adam = ModelOptimizer(1, adam, list(ptrnet.parameters()), 5.0)
 epochs = 3
 for i in trange(epochs, desc="Epoch"):
     epoch = i + 1
