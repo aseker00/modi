@@ -14,8 +14,8 @@ from pathlib import Path
 root_dir_path = Path.home() / 'dev/aseker00/modi'
 ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
 
-scheme = 'UD'
-# scheme = 'SPMRL'
+# scheme = 'UD'
+scheme = 'SPMRL'
 # la_name = 'ar'
 la_name = 'he'
 # la_name = 'tr'
@@ -98,7 +98,7 @@ else:
     torch.save(form_ft_emb, form_ft_emb_path)
     torch.save(lemma_ft_emb, lemma_ft_emb_path)
 
-# inf_train_set = TensorDataset(*[t[:100] for t in inf_train_set.tensors])
+inf_train_set = TensorDataset(*[t[:100] for t in inf_train_set.tensors])
 inf_train_data = DataLoader(inf_train_set, batch_size=1, shuffle=True)
 inf_dev_data = DataLoader(inf_dev_set, batch_size=1)
 inf_test_data = DataLoader(inf_test_set, batch_size=1)
@@ -261,22 +261,20 @@ for i in trange(epochs, desc="Epoch"):
     epoch = i + 1
     ptrnet.train()
     run_data(epoch, 'train-inf', inf_train_data, 10, ptrnet, adam, 1.0)
+    # ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-train.conllu')
+    # ds.save_as_lattice_samples(lattices, out_dir_path / f'e{epoch}-train.lattices.csv')
     # run_data(epoch, 'train-uninf', uninf_train_data, 320, ptrnet, adam, 1.0)
     ptrnet.eval()
     with torch.no_grad():
         samples, lattices = run_data(epoch, 'dev-inf', inf_dev_data, 32, ptrnet)
-        if scheme == 'UD':
-            ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-dev.conllu')
-            ds.save_as_lattice_samples(lattices, out_dir_path / f'e{epoch}-dev.lattices.csv')
+        ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-dev.conllu')
+        ds.save_as_lattice_samples(lattices, out_dir_path / f'e{epoch}-dev.lattices.csv')
         samples, lattices = run_data(epoch, 'test-inf', inf_test_data, 32, ptrnet)
-        if scheme == 'UD':
-            ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-test.conllu')
-            ds.save_as_lattice_samples(lattices, out_dir_path / f'e{epoch}-test.lattices.csv')
+        ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-test.conllu')
+        ds.save_as_lattice_samples(lattices, out_dir_path / f'e{epoch}-test.lattices.csv')
         samples, lattices = run_data(epoch, 'dev-uninf', uninf_dev_data, 32, ptrnet)
-        if scheme == 'UD':
-            ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-dev-uninf.conllu')
-            ds.save_as_lattice_samples(lattices, out_dir_path / f'e{epoch}-dev-uninf.lattices.csv')
+        ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-dev-uninf.conllu')
+        ds.save_as_lattice_samples(lattices, out_dir_path / f'e{epoch}-dev-uninf.lattices.csv')
         samples, lattices = run_data(epoch, 'test-uninf', uninf_test_data, 32, ptrnet)
-        if scheme == 'UD':
-            ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-test-uninf.conllu')
-            ds.save_as_lattice_samples(lattices, out_dir_path / f'e{epoch}-test-uninf.lattices.csv')
+        ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-test-uninf.conllu')
+        ds.save_as_lattice_samples(lattices, out_dir_path / f'e{epoch}-test-uninf.lattices.csv')
