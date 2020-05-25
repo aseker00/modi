@@ -105,10 +105,10 @@ uninf_test_data = DataLoader(uninf_test_set, batch_size=1)
 device = None
 num_tags = len(data_vocab['tags'])
 num_feats = len(data_vocab['feats'])
-tag_emb = nn.Embedding(num_embeddings=num_tags, embedding_dim=32, padding_idx=0)
-feats_emb = nn.Embedding(num_embeddings=num_feats, embedding_dim=32, padding_idx=0)
 form_ft_emb.weight.requires_grad = False
 lemma_ft_emb.weight.requires_grad = False
+tag_emb = nn.Embedding(num_embeddings=num_tags, embedding_dim=32, padding_idx=0)
+feats_emb = nn.Embedding(num_embeddings=num_feats, embedding_dim=32, padding_idx=0)
 # token_char_emb = TokenCharEmbedding(token_ft_emb, 0.5, char_ft_emb, 32)
 # dataset::_get_lattice_analysis_samples: morpheme_column_names = ['is_gold', 'form_id', 'lemma_id', 'tag_id']
 num_morpheme_feats = inf_train_set.tensors[2].shape[-1] - 4
@@ -254,7 +254,7 @@ lr = 1e-3
 parameters = list(filter(lambda p: p.requires_grad, ptrnet.parameters()))
 adam = AdamW(parameters, lr=lr)
 adam = ModelOptimizer(1, adam, parameters, 5.0)
-epochs = 3
+epochs = 9
 for i in trange(epochs, desc="Epoch"):
     epoch = i + 1
     ptrnet.train()

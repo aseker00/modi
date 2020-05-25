@@ -170,7 +170,7 @@ lr = 1e-3
 parameters = list(filter(lambda p: p.requires_grad, tagger.parameters()))
 adam = AdamW(parameters, lr=lr)
 adam = ModelOptimizer(1, adam, parameters, 5.0)
-epochs = 3
+epochs = 9
 for i in trange(epochs, desc="Epoch"):
     epoch = i + 1
     tagger.train()

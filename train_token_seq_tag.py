@@ -73,8 +73,8 @@ test_data = DataLoader(test_set, batch_size=1)
 device = None
 num_tags = len(data_vocab['tags'])
 max_tag_seq_len = train_set.tensors[-1].shape[2]
-tag_emb = nn.Embedding(num_embeddings=num_tags, embedding_dim=32, padding_idx=0)
 token_ft_emb.weight.requires_grad = False
+tag_emb = nn.Embedding(num_embeddings=num_tags, embedding_dim=32, padding_idx=0)
 seq_char_emb = TokenCharEmbedding(token_ft_emb, 0.0, char_ft_emb, 32)
 seq_encoder = nn.LSTM(input_size=seq_char_emb.embedding_dim, hidden_size=64, num_layers=2, bidirectional=True, batch_first=True, dropout=0.0)
 tag_decoder = SequenceStepDecoder(seq_char_emb.embedding_dim + tag_emb.embedding_dim, seq_encoder.hidden_size * 2, 1, 0.0, num_tags)
@@ -139,7 +139,7 @@ lr = 1e-3
 parameters = list(filter(lambda p: p.requires_grad, s2s.parameters()))
 adam = AdamW(parameters, lr=lr)
 adam = ModelOptimizer(1, adam, parameters, 5.0)
-epochs = 3
+epochs = 9
 for i in trange(epochs, desc="Epoch"):
     epoch = i + 1
     s2s.train()
