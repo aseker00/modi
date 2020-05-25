@@ -48,7 +48,7 @@ if all([path.exists() for path in [dev_set_path, test_set_path, train_set_path]]
     data_vocab = ds.load_vocab(tb_root_dir_path, 'gold', la_name, tb_name, seq_type)
 else:
     partition = ['dev', 'test', 'train']
-    token_samples, morph_samples, data_vocab = ds.load_data_samples(tb_root_dir_path, partition, la_name, tb_name, seq_type)
+    token_samples, morph_samples, data_vocab = ds.load_data_samples(tb_root_dir_path, partition, 'gold', la_name, tb_name, seq_type)
     token_lengths = {t: torch.tensor(token_samples[t][1], dtype=torch.long) for t in token_samples}
     token_samples = {t: torch.tensor(token_samples[t][0], dtype=torch.long) for t in token_samples}
     morph_samples = {t: torch.tensor(morph_samples[t], dtype=torch.long) for t in morph_samples}
@@ -68,7 +68,7 @@ if all([path.exists() for path in [char_ft_emb_path, token_ft_emb_path]]):
     char_ft_emb = torch.load(char_ft_emb_path)
     token_ft_emb = torch.load(token_ft_emb_path)
 else:
-    char_ft_emb, token_ft_emb, _, _ = ds.load_ft_emb(tb_root_dir_path, ft_root_dir_path, data_vocab, la_name, tb_name, seq_type)
+    char_ft_emb, token_ft_emb, _, _ = ds.load_ft_emb(tb_root_dir_path, ft_root_dir_path, 'gold', data_vocab, la_name, tb_name, seq_type)
     torch.save(char_ft_emb, str(char_ft_emb_path))
     torch.save(token_ft_emb, str(token_ft_emb_path))
 

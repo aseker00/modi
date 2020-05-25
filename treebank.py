@@ -582,16 +582,16 @@ def main():
         _save_base(tb_path, root_path, partition, 'gold', lang, la_name, tb_name, scheme)
         if scheme == 'UD':
             _save_base(tb_path, root_path, partition, 'udpipe', lang, la_name, tb_name, scheme)
-        if la_name in ['he', 'tr']:
+        if la_name in ['ar', 'he', 'tr']:
             # if scheme == 'SPMRL':
             #     _save_gold_morpheme_tag_type(root_path, partition, 'gold', la_name, tb_name, 'morpheme-type')
             #     _save_gold_multi_tag(root_path, partition, 'gold', la_name, tb_name, 'morpheme-type')
             _save_base_multi_tag(root_path, partition, 'gold', la_name, tb_name, 'token')
-            if la_name not in ma_names:
-                continue
-            ma_name = ma_names[la_name]
-            _save_uninfused_lattices(tb_path, root_path, partition, 'gold', lang, la_name, tb_name, ma_name, scheme)
-            _save_infused_lattices(root_path, partition, 'gold', la_name, tb_name, ma_name)
+            if la_name in ['he', 'tr']:
+                if la_name in ma_names:
+                    ma_name = ma_names[la_name]
+                    _save_uninfused_lattices(tb_path, root_path, partition, 'gold', lang, la_name, tb_name, ma_name, scheme)
+                    _save_infused_lattices(root_path, partition, 'gold', la_name, tb_name, ma_name)
 
 
 if __name__ == '__main__':
