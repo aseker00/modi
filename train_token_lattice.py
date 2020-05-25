@@ -5,7 +5,6 @@ from torch.utils.data.dataloader import DataLoader
 from torch.utils.data.dataset import TensorDataset
 import dataset as ds
 from lattice_models import *
-from tag_models import TokenCharEmbedding
 from utils import *
 import os
 
@@ -14,8 +13,8 @@ from pathlib import Path
 root_dir_path = Path.home() / 'dev/aseker00/modi'
 ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
 
-# scheme = 'UD'
-scheme = 'SPMRL'
+scheme = 'UD'
+# scheme = 'SPMRL'
 # la_name = 'ar'
 la_name = 'he'
 # la_name = 'tr'
@@ -48,8 +47,8 @@ inf_test_set_path = data_dir_path / 'test-gold-inf.pth'
 inf_train_set_path = data_dir_path / 'train-gold-inf.pth'
 uninf_dev_set_path = data_dir_path / 'dev-gold-uninf.pth'
 uninf_test_set_path = data_dir_path / 'test-gold-uninf.pth'
-char_ft_emb_path = data_dir_path / 'char-ft-gold-emb.pth'
-token_ft_emb_path = data_dir_path / 'token-ft-gold-emb.pth'
+# char_ft_emb_path = data_dir_path / 'char-ft-gold-emb.pth'
+# token_ft_emb_path = data_dir_path / 'token-ft-gold-emb.pth'
 form_ft_emb_path = data_dir_path / 'form-ft-gold-emb.pth'
 lemma_ft_emb_path = data_dir_path / 'lemma-ft-gold-emb.pth'
 
@@ -80,18 +79,19 @@ else:
     torch.save(uninf_dev_set, uninf_dev_set_path)
     torch.save(uninf_test_set, uninf_test_set_path)
 
-if all([path.exists() for path in [char_ft_emb_path, token_ft_emb_path, form_ft_emb_path, lemma_ft_emb_path]]):
-    char_ft_emb = torch.load(char_ft_emb_path)
-    token_ft_emb = torch.load(token_ft_emb_path)
+# if all([path.exists() for path in [char_ft_emb_path, token_ft_emb_path, form_ft_emb_path, lemma_ft_emb_path]]):
+if all([path.exists() for path in [form_ft_emb_path, lemma_ft_emb_path]]):
+    # char_ft_emb = torch.load(char_ft_emb_path)
+    # token_ft_emb = torch.load(token_ft_emb_path)
     form_ft_emb = torch.load(form_ft_emb_path)
     lemma_ft_emb = torch.load(lemma_ft_emb_path)
 else:
-    char_ft_emb, token_ft_emb, form_ft_emb, lemma_ft_emb = ds.load_ft_emb(tb_root_dir_path, ft_root_dir_path, data_vocab, la_name, tb_name, seq_type, ma_name)
-    token_ft_emb.weight.requires_grad = False
-    form_ft_emb.weight.requires_grad = False
-    lemma_ft_emb.weight.requires_grad = False
-    torch.save(char_ft_emb, char_ft_emb_path)
-    torch.save(token_ft_emb, token_ft_emb_path)
+    _, _, form_ft_emb, lemma_ft_emb = ds.load_ft_emb(tb_root_dir_path, ft_root_dir_path, data_vocab, la_name, tb_name, seq_type, ma_name)
+    # token_ft_emb.weight.requires_grad = False
+    # form_ft_emb.weight.requires_grad = False
+    # lemma_ft_emb.weight.requires_grad = False
+    # torch.save(char_ft_emb, char_ft_emb_path)
+    # torch.save(token_ft_emb, token_ft_emb_path)
     torch.save(form_ft_emb, form_ft_emb_path)
     torch.save(lemma_ft_emb, lemma_ft_emb_path)
 
@@ -107,20 +107,20 @@ num_tags = len(data_vocab['tags'])
 num_feats = len(data_vocab['feats'])
 tag_emb = nn.Embedding(num_embeddings=num_tags, embedding_dim=32, padding_idx=0)
 feats_emb = nn.Embedding(num_embeddings=num_feats, embedding_dim=32, padding_idx=0)
-token_char_emb = TokenCharEmbedding(token_ft_emb, 0.5, char_ft_emb, 32)
-
+form_ft_emb.weight.requires_grad = False
+lemma_ft_emb.weight.requires_grad = False
+# token_char_emb = TokenCharEmbedding(token_ft_emb, 0.5, char_ft_emb, 32)
 # dataset::_get_lattice_analysis_samples: morpheme_column_names = ['is_gold', 'form_id', 'lemma_id', 'tag_id']
 num_morpheme_feats = inf_train_set.tensors[2].shape[-1] - 4
-
-lattice_emb = AnalysisEmbedding(form_ft_emb, 0.5, lemma_ft_emb, 0.5, tag_emb, feats_emb, num_morpheme_feats)
-lattice_encoder = nn.LSTM(input_size=lattice_emb.embedding_dim, hidden_size=32, num_layers=2, bidirectional=True, batch_first=True, dropout=0.0)
-analysis_decoder = nn.LSTM(input_size=token_char_emb.embedding_dim + lattice_emb.embedding_dim, hidden_size=lattice_encoder.hidden_size * 2, num_layers=1, batch_first=True, dropout=0.0)
-# analysis_decoder = nn.LSTM(input_size=lattice_emb.embedding_dim, hidden_size=lattice_encoder.hidden_size * 2, num_layers=1, batch_first=True, dropout=0.0)
+lattice_emb = AnalysisEmbedding(form_ft_emb, 0.0, lemma_ft_emb, 0.0, tag_emb, feats_emb, num_morpheme_feats)
+lattice_encoder = nn.LSTM(input_size=lattice_emb.embedding_dim, hidden_size=64, num_layers=2, bidirectional=True, batch_first=True, dropout=0.0)
+# analysis_decoder = nn.LSTM(input_size=token_char_emb.embedding_dim + lattice_emb.embedding_dim, hidden_size=lattice_encoder.hidden_size * 2, num_layers=1, batch_first=True, dropout=0.0)
+analysis_decoder = nn.LSTM(input_size=lattice_emb.embedding_dim, hidden_size=lattice_encoder.hidden_size * 2, num_layers=1, batch_first=True, dropout=0.0)
 analysis_attn = SequenceStepAttention()
 sos = [data_vocab['form2id']['<SOS>'], data_vocab['lemma2id']['<SOS>'], data_vocab['tag2id']['<SOS>']] + [data_vocab['feats2id']['<SOS>']] * num_morpheme_feats
 sos = torch.tensor(sos, dtype=torch.long, device=device)
-ptrnet = LatticeTokenPtrNet(lattice_emb, token_char_emb, lattice_encoder, analysis_decoder, analysis_attn, sos)
-# ptrnet = LatticeTokenPtrNet(lattice_emb, None, lattice_encoder, analysis_decoder, analysis_attn, sos)
+# ptrnet = LatticeTokenPtrNet(lattice_emb, token_char_emb, lattice_encoder, analysis_decoder, analysis_attn, sos)
+ptrnet = LatticeTokenPtrNet(lattice_emb, None, lattice_encoder, analysis_decoder, analysis_attn, sos)
 if device is not None:
     ptrnet.to(device)
 print(ptrnet)
@@ -193,8 +193,6 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
         b_lattice_ids = batch[2][:, :, :, :, 1:]
         b_analysis_lengths = batch[3]
 
-
-
         b_token_mask = b_token_ids[:, :, 0, 0] != 0
         b_batch_size = b_lattice_ids.shape[0]
         b_token_seq_size = b_lattice_ids.shape[1]
@@ -205,11 +203,11 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None, teacher_for
         teach = optimizer is not None and (teacher_forcing is None or random.uniform(0, 1) < teacher_forcing)
         # TODO: Change model to return scores in the same shape as tokens [batch_size, tokens_seq_size]?
         if teach:
-            b_scores = model(b_lattice_ids, b_lattice_mask, b_token_ids, b_token_lengths, b_gold_indices)
-            # b_scores = model(b_lattice_ids, b_lattice_mask, None, b_token_lengths, b_gold_indices)
+            # b_scores = model(b_lattice_ids, b_lattice_mask, b_token_ids, b_token_lengths, b_gold_indices)
+            b_scores = model(b_lattice_ids, b_lattice_mask, None, b_token_lengths, b_gold_indices)
         else:
-            b_scores = model(b_lattice_ids, b_lattice_mask, b_token_ids, b_token_lengths)
-            # b_scores = model(b_lattice_ids, b_lattice_mask, None, b_token_lengths)
+            # b_scores = model(b_lattice_ids, b_lattice_mask, b_token_ids, b_token_lengths)
+            b_scores = model(b_lattice_ids, b_lattice_mask, None, b_token_lengths)
         b_loss = model.loss(b_scores, b_gold_indices, b_token_mask)
         print_loss += b_loss
         total_loss += b_loss
@@ -260,14 +258,14 @@ epochs = 3
 for i in trange(epochs, desc="Epoch"):
     epoch = i + 1
     ptrnet.train()
-    run_data(epoch, 'train-inf', inf_train_data, 10, ptrnet, adam, 1.0)
+    run_data(epoch, 'train-inf', inf_train_data, 320, ptrnet, adam, 1.0)
     ptrnet.eval()
     with torch.no_grad():
         samples, lattices = run_data(epoch, 'dev-inf', inf_dev_data, 32, ptrnet)
         ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-dev.conllu')
-        ds.save_as_lattice_samples(lattices, out_dir_path / f'e{epoch}-dev.lattices.csv')
+        ds.save_as_lattice_samples(lattices, out_dir_path / f'e{epoch}-dev-inf.lattices.csv')
         samples, lattices = run_data(epoch, 'test-inf', inf_test_data, 32, ptrnet)
-        ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-test.conllu')
+        ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-test-inf.conllu')
         ds.save_as_lattice_samples(lattices, out_dir_path / f'e{epoch}-test.lattices.csv')
         samples, lattices = run_data(epoch, 'dev-uninf', uninf_dev_data, 32, ptrnet)
         ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-dev-uninf.conllu')

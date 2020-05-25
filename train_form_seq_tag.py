@@ -89,8 +89,9 @@ udpipe_test_data = DataLoader(udpipe_test_set, batch_size=1)
 
 device = None
 num_tags = len(data_vocab['tags'])
-seq_char_emb = TokenCharEmbedding(form_ft_emb, 0.5, char_ft_emb, 20)
-seq_encoder = BatchEncoder(seq_char_emb.embedding_dim, 200, 1, 0.0)
+form_ft_emb.weight.requires_grad = False
+seq_char_emb = TokenCharEmbedding(form_ft_emb, 0.0, char_ft_emb, 32)
+seq_encoder = BatchEncoder(seq_char_emb.embedding_dim, 64, 2, 0.0)
 tagger = FixedSequenceClassifier(seq_char_emb, seq_encoder, 0.0, 1, num_tags)
 if device is not None:
     tagger.to(device)
@@ -101,18 +102,6 @@ def to_token_lattice(tag_ids, token_mask):
     if scheme == 'UD':
         return ds.tag_ids_to_ud_lattice(tag_ids, token_mask, data_vocab)
     return ds.tag_ids_to_spmrl_lattice(tag_ids, token_mask, data_vocab)
-
-
-def to_tokens(token_ids, token_mask):
-    return ds.token_ids_to_tokens(token_ids, token_mask, data_vocab)
-
-
-def save_samples(samples, out_file_path):
-    with open(str(out_file_path), 'w') as f:
-        for sample in samples:
-            lattice_str = ds.to_conllu_mono_lattice_str(sample[0], sample[-1])
-            f.write(lattice_str)
-            f.write('\n')
 
 
 def get_form_input_seq(form_ids):
@@ -187,7 +176,7 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
         # b_token_mask = b_token_mask.detach().cpu().numpy()
         b_pred_tag_ids = b_pred_tag_ids.detach().cpu().numpy()
         b_gold_form_mask = b_gold_form_mask.detach().cpu().numpy()
-        gold_tokens = to_tokens(b_token_ids, b_token_mask)
+        gold_tokens = ds.token_ids_to_tokens(b_token_ids, b_token_mask, data_vocab)
         # gold_token_lattice = to_token_lattice(b_gold_tag_ids, b_token_mask.any(axis=2))
         eval_gold_token_lattice = to_token_lattice(b_eval_gold_tag_ids, b_eval_gold_form_mask.any(axis=2))
         eval_pred_token_lattice = to_token_lattice(b_pred_tag_ids, b_gold_form_mask.any(axis=2))
@@ -221,13 +210,13 @@ epochs = 3
 for i in trange(epochs, desc="Epoch"):
     epoch = i + 1
     tagger.train()
-    run_data(epoch, 'train-gold', gold_train_data, 100, tagger, adam)
+    run_data(epoch, 'train-gold', gold_train_data, 320, tagger, adam)
     tagger.eval()
     with torch.no_grad():
         samples = run_data(epoch, 'dev-gold', gold_dev_data, 32, tagger)
-        ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-dev.conllu')
+        ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-dev-gold.conllu')
         samples = run_data(epoch, 'test-gold', gold_test_data, 32, tagger)
-        ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-test.conllu')
+        ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-test-gold.conllu')
         samples = run_data(epoch, 'dev-udpipe', udpipe_dev_data, 32, tagger)
         ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-dev-udpipe.conllu')
         samples = run_data(epoch, 'test-udpipe', udpipe_test_data, 32, tagger)

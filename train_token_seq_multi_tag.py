@@ -81,8 +81,9 @@ test_data = DataLoader(test_set, batch_size=1)
 device = None
 num_tags = len(data_vocab['tags'])
 max_tag_seq_len = train_set.tensors[-1].shape[2]
-seq_char_emb = TokenCharEmbedding(token_ft_emb, 0.5, char_ft_emb, 20)
-seq_encoder = BatchEncoder(seq_char_emb.embedding_dim, 200, 1, 0.0)
+token_ft_emb.weight.requires_grad = False
+seq_char_emb = TokenCharEmbedding(token_ft_emb, 0.0, char_ft_emb, 32)
+seq_encoder = BatchEncoder(seq_char_emb.embedding_dim, 64, 2, 0.0)
 tagger = FixedSequenceClassifier(seq_char_emb, seq_encoder, 0.0, max_tag_seq_len, num_tags)
 if device is not None:
     tagger.to(device)
@@ -95,18 +96,6 @@ def to_token_lattice(tag_ids, token_mask):
     return ds.tag_ids_to_spmrl_lattice(tag_ids, token_mask, data_vocab)
 
 
-def to_tokens(token_ids, token_mask):
-    return ds.token_ids_to_tokens(token_ids, token_mask, data_vocab)
-
-
-def get_num_token_tags(multi_tag_ids):
-    return ds.get_num_token_tags(multi_tag_ids, data_vocab)
-
-
-def to_tags(tag_ids):
-    return ds.tag_ids_to_tags(tag_ids, data_vocab)
-
-
 def to_tag_ids(multi_tag_ids, num_token_tags):
     multi_tag_ids_mask_idx = (multi_tag_ids != data_vocab['tag2id']['_']).nonzero()
     token_indices, tag_counts = np.unique(multi_tag_ids_mask_idx[1], axis=0, return_counts=True)
@@ -117,7 +106,7 @@ def to_tag_ids(multi_tag_ids, num_token_tags):
             tag_id = multi_tag_ids[0, token_idx, multi_tag_ids_mask_idx[2][mask_idx]]
             multi_tags[0, token_idx, tag_idx] = tag_id
             mask_idx += 1
-    multi_tags = to_tags(multi_tags)
+    multi_tags = ds.tag_ids_to_tags(multi_tags, data_vocab)
     tags = np.full_like(multi_tags, '<PAD>', dtype=object, shape=(multi_tags.shape[0], multi_tags.shape[1], num_token_tags))
     for batch_idx in range(multi_tags.shape[0]):
         for token_idx in range(multi_tags.shape[1]):
@@ -128,14 +117,6 @@ def to_tag_ids(multi_tag_ids, num_token_tags):
                     tags[batch_idx, token_idx, tag_idx] = tag
                     tag_idx += 1
     return ds.tags_to_tag_ids(tags, data_vocab)
-
-
-def save_samples(samples, out_file_path):
-    with open(str(out_file_path), 'w') as f:
-        for sample in samples:
-            lattice_str = ds.to_conllu_mono_lattice_str(sample[0], sample[-1])
-            f.write(lattice_str)
-            f.write('\n')
 
 
 def run_data(epoch, phase, data, print_every, model, optimizer=None):
@@ -157,9 +138,10 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
         b_token_mask = b_token_mask.detach().cpu().numpy()
         b_gold_multi_tag_ids = b_gold_multi_tag_ids.detach().cpu().numpy()
         b_pred_multi_tag_ids = b_pred_multi_tag_ids.detach().cpu().numpy()
-        gold_tokens = to_tokens(b_token_ids, b_token_mask)
-        max_token_tags_num = get_num_token_tags(b_gold_multi_tag_ids)
-        max_token_tags_num = max(max_token_tags_num, get_num_token_tags(b_pred_multi_tag_ids))
+        gold_tokens = ds.token_ids_to_tokens(b_token_ids, b_token_mask, data_vocab)
+        max_gold_token_tags_num = ds.get_num_token_tags(b_gold_multi_tag_ids, data_vocab)
+        max_pred_token_tags_num = ds.get_num_token_tags(b_pred_multi_tag_ids, data_vocab)
+        max_token_tags_num = max(max_gold_token_tags_num, max_pred_token_tags_num)
         b_gold_tag_ids = to_tag_ids(b_gold_multi_tag_ids, max_token_tags_num)
         b_pred_tag_ids = to_tag_ids(b_pred_multi_tag_ids, max_token_tags_num)
         gold_token_lattice = to_token_lattice(b_gold_tag_ids, b_token_mask)
@@ -192,10 +174,10 @@ epochs = 3
 for i in trange(epochs, desc="Epoch"):
     epoch = i + 1
     tagger.train()
-    run_data(epoch, 'train', train_data, 10, tagger, adam)
+    run_data(epoch, 'train', train_data, 320, tagger, adam)
     tagger.eval()
     with torch.no_grad():
-        dev_samples = run_data(epoch, 'dev', dev_data, 32, tagger)
-        save_samples(dev_samples, out_dir_path / f'dev-{epoch}.conllu')
+        samples = run_data(epoch, 'dev', dev_data, 32, tagger)
+        ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-dev-gold.conllu')
         test_samples = run_data(epoch, 'test', test_data, 32, tagger)
-        save_samples(test_samples, out_dir_path / f'test-{epoch}.conllu')
+        ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-test-gold.conllu')

@@ -73,9 +73,10 @@ test_data = DataLoader(test_set, batch_size=1)
 device = None
 num_tags = len(data_vocab['tags'])
 max_tag_seq_len = train_set.tensors[-1].shape[2]
-tag_emb = nn.Embedding(num_embeddings=num_tags, embedding_dim=20, padding_idx=0)
-seq_char_emb = TokenCharEmbedding(token_ft_emb, 0.5, char_ft_emb, 20)
-seq_encoder = nn.LSTM(input_size=seq_char_emb.embedding_dim, hidden_size=200, num_layers=1, bidirectional=True, batch_first=True, dropout=0.0)
+tag_emb = nn.Embedding(num_embeddings=num_tags, embedding_dim=32, padding_idx=0)
+token_ft_emb.weight.requires_grad = False
+seq_char_emb = TokenCharEmbedding(token_ft_emb, 0.0, char_ft_emb, 32)
+seq_encoder = nn.LSTM(input_size=seq_char_emb.embedding_dim, hidden_size=64, num_layers=2, bidirectional=True, batch_first=True, dropout=0.0)
 tag_decoder = SequenceStepDecoder(seq_char_emb.embedding_dim + tag_emb.embedding_dim, seq_encoder.hidden_size * 2, 1, 0.0, num_tags)
 sos = torch.tensor([data_vocab['tag2id']['<SOS>']], dtype=torch.long, device=device)
 eot = torch.tensor([data_vocab['tag2id']['<EOT>']], dtype=torch.long, device=device)
@@ -89,18 +90,6 @@ def to_token_lattice(tag_ids, token_mask):
     if scheme == 'UD':
         return ds.tag_ids_to_ud_lattice(tag_ids, token_mask, data_vocab)
     return ds.tag_ids_to_spmrl_lattice(tag_ids, token_mask, data_vocab)
-
-
-def to_tokens(token_ids, token_mask):
-    return ds.token_ids_to_tokens(token_ids, token_mask, data_vocab)
-
-
-def save_samples(samples, out_file_path):
-    with open(str(out_file_path), 'w') as f:
-        for sample in samples:
-            lattice_str = ds.to_conllu_mono_lattice_str(sample[0], sample[-1])
-            f.write(lattice_str)
-            f.write('\n')
 
 
 def run_data(epoch, phase, data, print_every, model, optimizer=None):
@@ -123,7 +112,7 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
         b_token_mask = b_token_mask.detach().cpu().numpy()
         b_gold_tag_ids = b_gold_tag_ids.detach().cpu().numpy()
         b_pred_tag_ids = b_pred_tag_ids.detach().cpu().numpy()
-        gold_tokens = to_tokens(b_token_ids, b_token_mask)
+        gold_tokens = ds.token_ids_to_tokens(b_token_ids, b_token_mask, data_vocab)
         gold_token_lattice = to_token_lattice(b_gold_tag_ids, b_token_mask)
         pred_token_lattice = to_token_lattice(b_pred_tag_ids, b_token_mask)
         print_samples.append((gold_tokens, gold_token_lattice, pred_token_lattice))
@@ -157,7 +146,7 @@ for i in trange(epochs, desc="Epoch"):
     run_data(epoch, 'train', train_data, 320, s2s, adam)
     s2s.eval()
     with torch.no_grad():
-        dev_samples = run_data(epoch, 'dev', dev_data, 32, s2s)
-        save_samples(dev_samples, out_dir_path / f'dev-{epoch}.conllu')
+        samples = run_data(epoch, 'dev', dev_data, 32, s2s)
+        ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-dev-gold.conllu')
         test_samples = run_data(epoch, 'test', test_data, 32, s2s)
-        save_samples(test_samples, out_dir_path / f'test-{epoch}.conllu')
+        ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-test-gold.conllu')
