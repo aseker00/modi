@@ -1,7 +1,9 @@
+from collections import defaultdict
+
 from sklearn.metrics import classification_report
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+import pandas as pd
 
 
 def batch_narrow(tokens, chars, char_lengths, token_lengths, labels):
@@ -146,3 +148,22 @@ def print_tag_metrics(samples, remove_labels):
     print(classification_report(gold_labels, pred_labels, labels=list(labels)))
     # print(confusion_matrix(gold_tags, pred_tags))
     # precision, recall, fscore, support = precision_recall_fscore_support(gold_tags, pred_tags)
+
+
+def validate_baseline_tokens():
+    g = pd.read_csv('UD/he/HTB/train-gold.lattices.csv', index_col=0, keep_default_na=False)
+    u = pd.read_csv('UD/he/HTB/train-udpipe.lattices.csv', index_col=0, keep_default_na=False)
+
+    gd = defaultdict(dict)
+    for i, x in g.groupby(g.sent_id):
+        for j, y in x.groupby(x.token_id):
+            gd[i][j] = str(y.token.unique())
+
+    ud = defaultdict(dict)
+    for i, x in u.groupby(u.sent_id):
+        for j, y in x.groupby(x.token_id):
+            ud[i][j] = str(y.token.unique())
+
+    for a, b in zip(gd, ud):
+        if gd[a] != ud[b]:
+            print(a, b)
