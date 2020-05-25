@@ -684,6 +684,16 @@ def load_data_samples(root_path, partition, baseline, la_name, tb_name, seq_type
     max_morphemes = max([gold_max_morphemes, base_max_morphemes])
     gold_morph_samples = {t: _get_var_morpheme_samples(gold_dataset[t], data_vocab, max_morphemes) for t in gold_dataset}
     base_morph_samples = {t: _get_var_morpheme_samples(base_dataset[t], data_vocab, max_morphemes) for t in base_dataset}
+    if la_name == 'en':
+        train_seq = seq_samples['train']
+        train_gold_morph_samples = gold_morph_samples['train']
+        train_base_morph_samples = base_morph_samples['train']
+        misaligned_ids_file_path = data_dir / 'train-udpipe-misaligned-sent-ids.txt'
+        t = misaligned_ids_file_path.read_text()
+        remove_indices = [int(line) - 1 for line in t.split()]
+        seq_samples['train'] = np.delete(train_seq[0], remove_indices, axis=0), np.delete(train_seq[1], remove_indices, axis=0)
+        gold_morph_samples['train'] = np.delete(train_gold_morph_samples, remove_indices, axis=0)
+        base_morph_samples['train'] = np.delete(train_base_morph_samples, remove_indices, axis=0)
     return seq_samples, gold_morph_samples, base_morph_samples, data_vocab
 
 
@@ -808,7 +818,8 @@ def main():
         tb_names = {'he': 'HEBTB'}
         ma_names = {'he': 'heblex'}
 
-    for la_name in ['ar', 'en', 'he', 'tr']:
+    # for la_name in ['ar', 'en', 'he', 'tr']:
+    for la_name in ['en']:
         if la_name not in tb_names:
             continue
         tb_name = tb_names[la_name]
@@ -830,8 +841,8 @@ def main():
 
         token_samples, morph_samples, data_vocab = load_data_samples(root_path, partition, 'gold', la_name, tb_name)
         for partition_type in partition:
-            print(f'{token_samples[partition_type][0].shape[0]} {partition_type} gold token samples, '
-                  f'{morph_samples[partition_type].shape[0]} {partition_type} gold morpheme samples')
+            print(f'{token_samples[partition_type][0].shape} {partition_type} gold token samples, '
+                  f'{morph_samples[partition_type].shape} {partition_type} gold morpheme samples')
         if scheme == 'UD':
             token_samples, gold_morph_samples, base_morph_samples, data_vocab = load_data_samples(root_path, partition, 'udpipe', la_name, tb_name)
             for partition_type in partition:
@@ -841,8 +852,8 @@ def main():
         if la_name in ['he', 'tr']:
             token_samples, morph_samples, data_vocab = load_data_samples(root_path, partition, 'gold', la_name, tb_name, 'token-mtag')
             for partition_type in partition:
-                print(f'{token_samples[partition_type][0].shape[0]} {partition_type} gold token samples, '
-                      f'{morph_samples[partition_type].shape[0]} {partition_type} gold multi-tag morpheme samples')
+                print(f'{token_samples[partition_type][0].shape} {partition_type} gold token samples, '
+                      f'{morph_samples[partition_type].shape} {partition_type} gold multi-tag morpheme samples')
             # if scheme == 'SPMRL':
             #     token_samples, morph_samples, data_vocab = load_data_samples(root_path, partition, 'gold', la_name, tb_name, 'morpheme-type-mtag')
             #     for partition_type in partition:
@@ -852,9 +863,9 @@ def main():
                 ma_name = ma_names[la_name]
                 token_samples, infused_morph_samples, uninfused_morph_samples, data_vocab = load_data_samples(root_path, partition, 'gold', la_name, tb_name, 'lattice', ma_name)
                 for partition_type in partition:
-                    print(f'{token_samples[partition_type][0].shape[0]} {partition_type} gold token samples, '
-                          f'{infused_morph_samples[partition_type][0].shape[0]} {partition_type} infused morpheme samples, '
-                          f'{uninfused_morph_samples[partition_type][0].shape[0]} {partition_type} uninfused morpheme samples')
+                    print(f'{token_samples[partition_type][0].shape} {partition_type} gold token samples, '
+                          f'{infused_morph_samples[partition_type][0].shape} {partition_type} infused morpheme samples, '
+                          f'{uninfused_morph_samples[partition_type][0].shape} {partition_type} uninfused morpheme samples')
 
 
 if __name__ == '__main__':

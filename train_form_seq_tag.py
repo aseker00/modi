@@ -15,8 +15,8 @@ ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
 scheme = 'UD'
 # scheme = 'SPMRL'
 # la_name = 'ar'
-# la_name = 'en'
-la_name = 'he'
+la_name = 'en'
+# la_name = 'he'
 # la_name = 'tr'
 if la_name == 'ar':
     tb_name = 'PADT'
@@ -118,7 +118,7 @@ def save_samples(samples, out_file_path):
 def get_form_input_seq(form_ids):
     form_vec = np.vectorize(lambda x: data_vocab['forms'][x])
     form_len = np.vectorize(len)
-    forms = form_vec(form_ids.numpy())
+    forms = form_vec(form_ids.detach().cpu().numpy())
     char_ids = [torch.tensor([data_vocab['char2id'][c] for c in str(t)], dtype=torch.long, device=device) for t in forms]
     char_ids = pad_sequence(char_ids, batch_first=True)
     seq_ids = torch.stack([form_ids[:, None].repeat([1, char_ids.shape[1]]), char_ids], dim=2)
@@ -182,9 +182,11 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
         b_token_mask = b_token_mask.detach().cpu().numpy()
         # b_gold_tag_ids = b_gold_tag_ids.detach().cpu().numpy()
         b_eval_gold_tag_ids = b_eval_gold_tag_ids.detach().cpu().numpy()
+        b_eval_gold_form_mask = b_eval_gold_form_mask.detach().cpu().numpy()
         # b_eval_token_mask = b_eval_token_mask.detach().cpu().numpy()
         # b_token_mask = b_token_mask.detach().cpu().numpy()
         b_pred_tag_ids = b_pred_tag_ids.detach().cpu().numpy()
+        b_gold_form_mask = b_gold_form_mask.detach().cpu().numpy()
         gold_tokens = to_tokens(b_token_ids, b_token_mask)
         # gold_token_lattice = to_token_lattice(b_gold_tag_ids, b_token_mask.any(axis=2))
         eval_gold_token_lattice = to_token_lattice(b_eval_gold_tag_ids, b_eval_gold_form_mask.any(axis=2))
