@@ -53,7 +53,7 @@ def _load_vec_file(path: Path) -> (dict, list):
 ft_model = None
 
 
-def load_embedding_weight_matrix(model_file_path, vec_file_path: Path, words: list, device=None) -> nn.Embedding:
+def load_embedding_weight_matrix(model_file_path, vec_file_path: Path, words: list) -> nn.Embedding:
     if vec_file_path.exists():
         print(f"Loading FastText vectors from {vec_file_path}")
         indices, vectors = _load_vec_file(vec_file_path)
@@ -67,8 +67,8 @@ def load_embedding_weight_matrix(model_file_path, vec_file_path: Path, words: li
         if words[0] == '<PAD>':
             word_vectors[0] = [0] * len(word_vectors[0])
         _save_vec_file(vec_file_path, words, word_vectors)
-    word_matrix = torch.tensor(word_vectors, dtype=torch.float, device=device)
-    return nn.Embedding.from_pretrained(word_matrix, freeze=False, padding_idx=0)
+    word_matrix = torch.tensor(word_vectors, dtype=torch.float)
+    return nn.Embedding.from_pretrained(word_matrix, padding_idx=0)
 
 
 def get_word_vectors(model_path: Path, words: list) -> list:

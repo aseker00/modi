@@ -26,28 +26,27 @@ else:
     else:
         tb_name = 'HEBTB'
 
+seq_type = 'token'
 tb_root_dir_path = root_dir_path / 'tb' / scheme
-data_dir_path = root_dir_path / 'data' /scheme / la_name / tb_name
-out_dir_path = root_dir_path / 'out' / scheme / la_name / tb_name
+data_dir_path = root_dir_path / 'data' / scheme / la_name / tb_name / 'seq' / f'{seq_type}'
+out_dir_path = root_dir_path / 'out' / scheme / la_name / tb_name / 'seq' / f'{seq_type}'
 os.makedirs(str(out_dir_path), exist_ok=True)
+os.makedirs(str(data_dir_path), exist_ok=True)
 
-dev_set_path = data_dir_path / 'dev-inf.pth'
-test_set_path = data_dir_path / 'test-inf.pth'
-train_set_path = data_dir_path / 'train-inf.pth'
-char_ft_emb_path = data_dir_path / 'char-ft-emb.pth'
-token_ft_emb_path = data_dir_path / 'token-ft-emb.pth'
-form_ft_emb_path = data_dir_path / 'form-ft-emb.pth'
-lemma_ft_emb_path = data_dir_path / 'lemma-ft-emb.pth'
+dev_set_path = data_dir_path / 'dev-gold.pth'
+test_set_path = data_dir_path / 'test-gold.pth'
+train_set_path = data_dir_path / 'train-gold.pth'
+char_ft_emb_path = data_dir_path / 'char-ft-gold-emb.pth'
+token_ft_emb_path = data_dir_path / 'token-ft-gold-emb.pth'
 
 if all([path.exists() for path in [dev_set_path, test_set_path, train_set_path]]):
     dev_set = torch.load(str(dev_set_path))
     test_set = torch.load(str(test_set_path))
     train_set = torch.load(str(train_set_path))
-    data_vocab = ds.load_gold_vocab(tb_root_dir_path, la_name, tb_name)
+    data_vocab = ds.load_vocab(tb_root_dir_path, 'gold', la_name, tb_name)
 else:
-    os.makedirs(str(data_dir_path), exist_ok=True)
     partition = ['dev', 'test', 'train']
-    token_samples, morph_samples, data_vocab = ds.load_gold_data_samples(tb_root_dir_path, partition, la_name, tb_name)
+    token_samples, morph_samples, data_vocab = ds.load_data_samples(tb_root_dir_path, partition, la_name, tb_name)
     token_lengths = {t: torch.tensor(token_samples[t][1], dtype=torch.long) for t in token_samples}
     token_samples = {t: torch.tensor(token_samples[t][0], dtype=torch.long) for t in token_samples}
     morph_samples = {t: torch.tensor(morph_samples[t], dtype=torch.long) for t in morph_samples}
@@ -62,12 +61,11 @@ if all([path.exists() for path in [char_ft_emb_path, token_ft_emb_path]]):
     char_ft_emb = torch.load(char_ft_emb_path)
     token_ft_emb = torch.load(token_ft_emb_path)
 else:
-    os.makedirs(str(data_dir_path), exist_ok=True)
-    char_ft_emb, token_ft_emb = ds.load_gold_ft_emb(tb_root_dir_path, ft_root_dir_path, data_vocab, la_name, tb_name)
+    char_ft_emb, token_ft_emb, _, _ = ds.load_ft_emb(tb_root_dir_path, ft_root_dir_path, data_vocab, la_name, tb_name)
     torch.save(char_ft_emb, str(char_ft_emb_path))
     torch.save(token_ft_emb, str(token_ft_emb_path))
 
-# inf_train_set = TensorDataset(*[t[:100] for t in train_set.tensors])
+# train_set = TensorDataset(*[t[:100] for t in train_set.tensors])
 train_data = DataLoader(train_set, batch_size=1, shuffle=True)
 dev_data = DataLoader(dev_set, batch_size=1)
 test_data = DataLoader(test_set, batch_size=1)
@@ -76,12 +74,12 @@ device = None
 num_tags = len(data_vocab['tags'])
 max_tag_seq_len = train_set.tensors[-1].shape[2]
 tag_emb = nn.Embedding(num_embeddings=num_tags, embedding_dim=20, padding_idx=0)
-token_char_emb = TokenCharEmbedding(token_ft_emb, char_ft_emb, 20)
-token_encoder = nn.LSTM(input_size=token_char_emb.embedding_dim, hidden_size=200, num_layers=1, bidirectional=True, batch_first=True, dropout=0.0)
-tag_decoder = SequenceStepDecoder(token_char_emb.embedding_dim + tag_emb.embedding_dim, token_encoder.hidden_size * 2, 1, 0.0, num_tags)
+seq_char_emb = TokenCharEmbedding(token_ft_emb, 0.5, char_ft_emb, 20)
+seq_encoder = nn.LSTM(input_size=seq_char_emb.embedding_dim, hidden_size=200, num_layers=1, bidirectional=True, batch_first=True, dropout=0.0)
+tag_decoder = SequenceStepDecoder(seq_char_emb.embedding_dim + tag_emb.embedding_dim, seq_encoder.hidden_size * 2, 1, 0.0, num_tags)
 sos = torch.tensor([data_vocab['tag2id']['<SOS>']], dtype=torch.long, device=device)
 eot = torch.tensor([data_vocab['tag2id']['<EOT>']], dtype=torch.long, device=device)
-s2s = Seq2SeqClassifier(token_char_emb, token_encoder, tag_emb, tag_decoder, max_tag_seq_len, sos, eot)
+s2s = Seq2SeqClassifier(seq_char_emb, seq_encoder, tag_emb, tag_decoder, max_tag_seq_len, sos, eot)
 if device is not None:
     s2s.to(device)
 print(s2s)
@@ -149,8 +147,9 @@ def run_data(epoch, phase, data, print_every, model, optimizer=None):
 
 # torch.autograd.set_detect_anomaly(True)
 lr = 1e-3
-adam = AdamW(s2s.parameters(), lr=lr)
-adam = ModelOptimizer(1, adam, list(s2s.parameters()), 1.0)
+parameters = list(filter(lambda p: p.requires_grad, s2s.parameters()))
+adam = AdamW(parameters, lr=lr)
+adam = ModelOptimizer(1, adam, parameters, 5.0)
 epochs = 3
 for i in trange(epochs, desc="Epoch"):
     epoch = i + 1
@@ -159,8 +158,6 @@ for i in trange(epochs, desc="Epoch"):
     s2s.eval()
     with torch.no_grad():
         dev_samples = run_data(epoch, 'dev', dev_data, 32, s2s)
-        if scheme == 'UD':
-            save_samples(dev_samples, out_dir_path / f'dev-{epoch}.conllu')
+        save_samples(dev_samples, out_dir_path / f'dev-{epoch}.conllu')
         test_samples = run_data(epoch, 'test', test_data, 32, s2s)
-        if scheme == 'UD':
-            save_samples(test_samples, out_dir_path / f'test-{epoch}.conllu')
+        save_samples(test_samples, out_dir_path / f'test-{epoch}.conllu')

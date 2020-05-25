@@ -69,24 +69,24 @@ def _lattice_to_dataframe(lattice, column_names):
     return pd.DataFrame(rows, columns=column_names)
 
 
-def _save_data_lattices(root_path, dataset, data_type=None):
+def _save_data_lattices(root_path, dataset, baseline, data_type=None):
     os.makedirs(root_path, exist_ok=True)
     for partition_type in dataset:
         df = pd.concat(dataset[partition_type]).reset_index(drop=True)
-        if data_type is not None:
-            file_path = root_path / f'{partition_type}-{data_type}.lattices.csv'
+        if data_type:
+            file_path = root_path / f'{partition_type}-{baseline}-{data_type}.lattices.csv'
         else:
-            file_path = root_path / f'{partition_type}.lattices.csv'
+            file_path = root_path / f'{partition_type}-{baseline}.lattices.csv'
         df.to_csv(str(file_path))
 
 
-def _load_data_lattices(root_path, partition, data_type=None):
+def _load_data_lattices(root_path, partition, baseline, data_type=None):
     dataset = {}
     for partition_type in partition:
-        if data_type is not None:
-            file_path = root_path / f'{partition_type}-{data_type}.lattices.csv'
+        if data_type:
+            file_path = root_path / f'{partition_type}-{baseline}-{data_type}.lattices.csv'
         else:
-            file_path = root_path / f'{partition_type}.lattices.csv'
+            file_path = root_path / f'{partition_type}-{baseline}.lattices.csv'
         print(f'loading {file_path.stem}')
         df = pd.read_csv(str(file_path), index_col=0, keep_default_na=False)
         lattices = {sent_id: x.reset_index(drop=True) for sent_id, x in df.groupby(df.sent_id)}
@@ -366,17 +366,23 @@ def _load_ud_conllu_partition(lattices_file_path, column_names):
     lattice_sentences = _split_sentences(lattices_file_path)
     for i, lattice in enumerate(lattice_sentences):
         sent_id = i + 1
+        # Bug fix - invalid lines (missing '_') found in the Hebrew treebank
         lattice = [line.replace("\t\t", "\t_\t").replace("\t\t", "\t_\t").split() for line in lattice if line[0] != '#']
+        # Bug fix - clean unicode characters
         lattice = _normalize_lattice(lattice)
+
         df = _build_ud_sample(sent_id, lattice, column_names)
         partition.append(df)
     return partition
 
 
-def _load_ud_conllu(tb_path, partition, column_names, lang, la_name, tb_name, ma_name=None):
+def _load_ud_conllu(tb_path, partition, baseline, column_names, lang, la_name, tb_name, ma_name=None):
     treebank = {}
     for partition_type in partition:
-        file_name = f'{la_name}_{tb_name}-ud-{partition_type}'.lower()
+        if baseline == 'gold':
+            file_name = f'{la_name}_{tb_name}-ud-{partition_type}'.lower()
+        else:
+            file_name = f'{la_name}_{tb_name}-ud-{partition_type}-{baseline}'.lower()
         if ma_name is not None:
             lattices_path = tb_path / f'conllul/UL_{lang}-{tb_name}' / f'{file_name}.{ma_name}.conllul'
         else:
@@ -436,11 +442,11 @@ def _get_infused_lattices(df, gold_df):
     return inf_df
 
 
-def _infuse_tb_lattices(lattices, gold_lattices):
+def _infuse_tb_lattices(lattices, base_lattices):
     dataset = {}
     for partition_type in lattices:
         dataset[partition_type] = [(df, gold_df) for df, gold_df in zip(lattices[partition_type],
-                                                                        gold_lattices[partition_type])]
+                                                                        base_lattices[partition_type])]
     infused_dataset = defaultdict(list)
     for partition_type in dataset:
         print(f'infusing {partition_type} dataset')
@@ -449,130 +455,143 @@ def _infuse_tb_lattices(lattices, gold_lattices):
     return infused_dataset
 
 
-def _save_gold(tb_path, root_path, partition, lang, la_name, tb_name, tb_scheme):
+def _save_base(tb_path, root_path, partition, baseline, lang, la_name, tb_name, tb_scheme):
     if tb_scheme == 'SPMRL':
         remove_zvl = tb_name[-1] == 'z'
-        gold_lattices = _load_spmrl_conll(tb_path, partition, _lattice_fields, lang, tb_name[:-1] if remove_zvl else tb_name)
+        base_lattices = _load_spmrl_conll(tb_path, partition, _lattice_fields, lang, tb_name[:-1] if remove_zvl else tb_name)
         if remove_zvl:
-            indices = _get_sent_indices_to_remove(gold_lattices['train'], ['ZVL'])
-            gold_lattices['train'] = [df for df in gold_lattices['train'] if df.sent_id.unique() not in indices]
+            indices = _get_sent_indices_to_remove(base_lattices['train'], ['ZVL'])
+            base_lattices['train'] = [df for df in base_lattices['train'] if df.sent_id.unique() not in indices]
     else:
-        gold_lattices = _load_ud_conllu(tb_path, partition, _lattice_fields, lang, la_name, tb_name)
-    gold_dataset = _to_data_lattices(gold_lattices)
-    _save_data_lattices(root_path / la_name / tb_name, gold_dataset, 'gold')
+        base_lattices = _load_ud_conllu(tb_path, partition, baseline, _lattice_fields, lang, la_name, tb_name)
+    base_dataset = _to_data_lattices(base_lattices)
+    _save_data_lattices(root_path / la_name / tb_name, base_dataset, baseline)
 
 
-def _save_gold_morpheme_tag_type(root_path, partition, la_name, tb_name, multi_tag_level):
-    gold_dataset = _load_data_lattices(root_path / la_name / tb_name, partition, 'gold')
-    _add_morpheme_type(gold_dataset)
-    _save_data_lattices(root_path / la_name / tb_name / 'seq' / f'{multi_tag_level}-multi-tag', gold_dataset, 'gold-type')
+def _save_base_morpheme_tag_type(root_path, partition, baseline, la_name, tb_name, mtag_level):
+    base_dataset = _load_data_lattices(root_path / la_name / tb_name, partition, baseline)
+    _add_morpheme_type(base_dataset)
+    _save_data_lattices(root_path / la_name / tb_name / 'seq' / f'{mtag_level}-mtag', base_dataset, baseline, 'type')
 
 
-# multi_tag_level = {'token': 'token-super-tag', 'morpheme-type': 'morpheme-type-multi-tag'}
-def _save_gold_multi_tag(root_path, partition, la_name, tb_name, multi_tag_level):
-    if multi_tag_level == 'token':
-        gold_dataset = _load_data_lattices(root_path / la_name / tb_name, partition, 'gold')
-        grouped_gold_dataset = _get_grouped_analysis_dataset(gold_dataset, _lattice_fields)
+def _save_base_multi_tag(root_path, partition, baseline, la_name, tb_name, mtag_level):
+    if mtag_level == 'token':
+        base_dataset = _load_data_lattices(root_path / la_name / tb_name, partition, baseline)
+        grouped_dataset = _get_grouped_analysis_dataset(base_dataset, _lattice_fields)
     else:
-        gold_type_dataset = _load_data_lattices(root_path / la_name / tb_name / 'seq' / f'{multi_tag_level}-multi-tag', partition, 'gold-type')
-        grouped_gold_dataset = _get_grouped_morpheme_type_dataset(gold_type_dataset, _lattice_fields)
-    _save_data_lattices(root_path / la_name / tb_name / 'seq' / f'{multi_tag_level}-multi-tag', grouped_gold_dataset, f'gold-{multi_tag_level}')
+        type_dataset = _load_data_lattices(root_path / la_name / tb_name / 'seq' / f'{mtag_level}-mtag', partition, baseline, 'type')
+        grouped_dataset = _get_grouped_morpheme_type_dataset(type_dataset, _lattice_fields)
+    _save_data_lattices(root_path / la_name / tb_name / 'seq' / f'{mtag_level}-mtag', grouped_dataset, baseline, 'mtag')
 
 
-def _save_uninfused_lattices(tb_path, root_path, partition, lang, la_name, tb_name, ma_name, tb_scheme):
-    gold_dataset = _load_data_lattices(root_path / la_name / tb_name, partition, 'gold')
+def _save_uninfused_lattices(tb_path, root_path, partition, baseline, lang, la_name, tb_name, ma_name, tb_scheme):
+    base_dataset = _load_data_lattices(root_path / la_name / tb_name, partition, baseline)
     if tb_scheme == 'SPMRL':
         remove_zvl = tb_name[-1] == 'z'
         lattices = _load_spmrl_conll(tb_path, partition, _lattice_fields, lang, tb_name[:-1] if remove_zvl else tb_name, ma_name)
         if remove_zvl:
-            gold_lattices = _load_spmrl_conll(tb_path, partition, _lattice_fields, lang, tb_name[:-1] if remove_zvl else tb_name)
-            indices = _get_sent_indices_to_remove(gold_lattices['train'], ['ZVL'])
+            base_lattices = _load_spmrl_conll(tb_path, partition, _lattice_fields, lang, tb_name[:-1] if remove_zvl else tb_name)
+            indices = _get_sent_indices_to_remove(base_lattices['train'], ['ZVL'])
             lattices['train'] = [df for df in lattices['train'] if df.sent_id.unique() not in indices]
     else:
-        lattices = _load_ud_conllu(tb_path, partition, _lattice_fields, lang, la_name, tb_name, ma_name)
+        lattices = _load_ud_conllu(tb_path, partition, baseline, _lattice_fields, lang, la_name, tb_name, ma_name)
     lattices_dataset = _to_data_lattices(lattices)
-    valid_sent_mask = _validate_data_lattices(lattices_dataset, gold_dataset)
+    valid_sent_mask = _validate_data_lattices(lattices_dataset, base_dataset)
     if any([not all(valid_sent_mask[t]) for t in partition]):
         for partition_type in partition:
             lattices_dataset[partition_type] = [d for d, m in zip(lattices_dataset[partition_type], valid_sent_mask[partition_type]) if m]
-            gold_dataset[partition_type] = [d for d, m in zip(gold_dataset[partition_type], valid_sent_mask[partition_type]) if m]
-        _save_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, gold_dataset, 'gold')
-        _save_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, lattices_dataset, 'uninf')
+            base_dataset[partition_type] = [d for d, m in zip(base_dataset[partition_type], valid_sent_mask[partition_type]) if m]
+        _save_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, base_dataset, baseline)
+        _save_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, lattices_dataset, baseline, 'uninf')
     else:
-        _save_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, lattices_dataset, 'uninf')
+        _save_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, lattices_dataset, baseline, 'uninf')
 
 
-def _save_infused_lattices(root_path, partition, la_name, tb_name, ma_name):
-    lattices_dataset, gold_dataset = tb_load_uninfused_lattices(root_path, partition, la_name, tb_name, ma_name)
-    infused_lattices_dataset = _infuse_tb_lattices(lattices_dataset, gold_dataset)
-    _save_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, infused_lattices_dataset)
+def _save_infused_lattices(root_path, partition, baseline, la_name, tb_name, ma_name):
+    lattices_dataset, base_dataset = tb_load_lattices(root_path, partition, baseline, la_name, tb_name, ma_name, 'uninf')
+    infused_lattices_dataset = _infuse_tb_lattices(lattices_dataset, base_dataset)
+    _save_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, infused_lattices_dataset, baseline, 'inf')
 
 
 # Load data lattices
-def _load_gold_data_lattices(root_path, partition, la_name, tb_name, ma_name):
+def _load_base_data_lattices(root_path, partition, baseline, la_name, tb_name, ma_name):
     try:
-        gold_dataset = _load_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, partition, 'gold')
+        base_dataset = _load_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, partition, baseline)
     except FileNotFoundError:
-        gold_dataset = _load_data_lattices(root_path / la_name / tb_name, partition, 'gold')
-    return gold_dataset
+        base_dataset = _load_data_lattices(root_path / la_name / tb_name, partition, baseline)
+    return base_dataset
 
 
 # API ##################################################################################################################
-def tb_load_gold(root_path, partition, la_name, tb_name):
-    return _load_data_lattices(root_path / la_name / tb_name, partition, 'gold')
+def tb_load_base(root_path, partition, baseline, la_name, tb_name):
+    return _load_data_lattices(root_path / la_name / tb_name, partition, baseline)
 
 
-# multi_tag_level = {'token': 'token-super-tag', 'morpheme-type': 'morpheme-type-multi-tag'}
-def tb_load_gold_multi_tag(root_path, partition, la_name, tb_name, multi_tag_level):
-    return _load_data_lattices(root_path / la_name / tb_name / 'seq' / f'{multi_tag_level}-multi-tag', partition, f'gold-{multi_tag_level}')
+def tb_load_base_mtag(root_path, partition, baseline, la_name, tb_name, mtag_level):
+    return _load_data_lattices(root_path / la_name / tb_name / 'seq' / f'{mtag_level}', partition, baseline, 'mtag')
 
 
-def tb_load_infused_lattices(root_path, partition, la_name, tb_name, ma_name):
-    gold_dataset = _load_gold_data_lattices(root_path, partition, la_name, tb_name, ma_name)
-    infused_lattices_dataset = _load_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, partition)
-    return infused_lattices_dataset, gold_dataset
+def tb_load_lattices(root_path, partition, baseline, la_name, tb_name, ma_name, inf_type):
+    base_dataset = _load_base_data_lattices(root_path, partition, baseline, la_name, tb_name, ma_name)
+    lattices_dataset = _load_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, partition, baseline, inf_type)
+    return lattices_dataset, base_dataset
 
 
-def tb_load_uninfused_lattices(root_path, partition, la_name, tb_name, ma_name):
-    gold_dataset = _load_gold_data_lattices(root_path, partition, la_name, tb_name, ma_name)
-    lattices_dataset = _load_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, partition, 'uninf')
-    return lattices_dataset, gold_dataset
+def tb_export_tokens(root_path, tb_path, partition, lang, la_name, tb_name):
+    dataset = tb_load_base(root_path, partition, 'gold', la_name, tb_name)
+    for partition_type in dataset:
+        tokens = []
+        for x in dataset[partition_type]:
+            d = {int(j): str(y.token.unique().item()) for j, y in x.groupby(x.token_id)}
+            sent_tokens = [d[i] for i in sorted(d)]
+            tokens.append(sent_tokens)
+        file_name = f'{la_name}_{tb_name}-ud-{partition_type}'.lower()
+        file_path = tb_path / f'UD_{lang}-{tb_name}' / f'{file_name}.tokens.txt'
+        with open(file_path, 'w', encoding='utf-8') as f:
+            for sent_tokens in tokens:
+                f.write('\n'.join(sent_tokens))
+                f.write('\n\n')
+            f.write('\n')
 # API ##################################################################################################################
 
 
 def main():
-    # scheme = 'UD'
-    scheme = 'SPMRL'
+    scheme = 'UD'
+    # scheme = 'SPMRL'
     schemes = {'UD': 'UniversalDependencies', 'SPMRL': 'HebrewResources'}
     partition = ['dev', 'test', 'train']
     root_path = Path.home() / f'dev/aseker00/modi/tb/{scheme}'
     tb_path = Path.home() / f'dev/onlplab/{schemes[scheme]}'
     if scheme == 'UD':
-        langs = {'ar': 'Arabic', 'he': 'Hebrew', 'tr': 'Turkish'}
-        tb_names = {'ar': 'PADT', 'he': 'HTB', 'tr': 'IMST'}
+        langs = {'ar': 'Arabic', 'en': 'English', 'he': 'Hebrew', 'tr': 'Turkish'}
+        tb_names = {'ar': 'PADT', 'en': 'EWT', 'he': 'HTB', 'tr': 'IMST'}
         ma_names = {'ar': 'calima-star', 'he': 'heblex', 'tr': 'trmorph2'}
         # ma_names = {'ar': 'Apertium-E', 'he': 'Apertium', 'tr': 'ApertiumMA'}
         # ma_names = {'ar': 'baseline', 'he': 'baseline', 'tr': 'baseline'}
     else:
         langs = {'he': 'Hebrew'}
-        tb_names = {'he': 'HEBTBz'}
+        tb_names = {'he': 'HEBTB'}
         ma_names = {'he': 'heblex'}
 
-    for la_name in langs:
+    for la_name in ['ar', 'en', 'he', 'tr']:
         if la_name not in tb_names:
             continue
         lang = langs[la_name]
         tb_name = tb_names[la_name]
-        _save_gold(tb_path, root_path, partition, lang, la_name, tb_name, scheme)
-        if scheme == 'SPMRL':
-            _save_gold_morpheme_tag_type(root_path, partition, la_name, tb_name, 'morpheme-type')
-            _save_gold_multi_tag(root_path, partition, la_name, tb_name, 'morpheme-type')
-        _save_gold_multi_tag(root_path, partition, la_name, tb_name, 'token')
-        if la_name not in ma_names:
-            continue
-        ma_name = ma_names[la_name]
-        _save_uninfused_lattices(tb_path, root_path, partition, lang, la_name, tb_name, ma_name, scheme)
-        _save_infused_lattices(root_path, partition, la_name, tb_name, ma_name)
+        # tb_export_tokens(root_path, tb_path, partition, lang, la_name, tb_name)
+        _save_base(tb_path, root_path, partition, 'gold', lang, la_name, tb_name, scheme)
+        if scheme == 'UD':
+            _save_base(tb_path, root_path, partition, 'udpipe', lang, la_name, tb_name, scheme)
+        if la_name in ['he', 'tr']:
+            # if scheme == 'SPMRL':
+            #     _save_gold_morpheme_tag_type(root_path, partition, 'gold', la_name, tb_name, 'morpheme-type')
+            #     _save_gold_multi_tag(root_path, partition, 'gold', la_name, tb_name, 'morpheme-type')
+            _save_base_multi_tag(root_path, partition, 'gold', la_name, tb_name, 'token')
+            if la_name not in ma_names:
+                continue
+            ma_name = ma_names[la_name]
+            _save_uninfused_lattices(tb_path, root_path, partition, 'gold', lang, la_name, tb_name, ma_name, scheme)
+            _save_infused_lattices(root_path, partition, 'gold', la_name, tb_name, ma_name)
 
 
 if __name__ == '__main__':
