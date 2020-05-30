@@ -179,5 +179,5 @@ for i in trange(epochs, desc="Epoch"):
     with torch.no_grad():
         samples = run_data(epoch, 'dev', dev_data, 32, tagger)
         ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-dev-gold.conllu')
-        test_samples = run_data(epoch, 'test', test_data, 32, tagger)
+        samples = run_data(epoch, 'test', test_data, 32, tagger)
         ds.save_as_conllu(samples, out_dir_path / f'e{epoch}-test-gold.conllu')

@@ -61,7 +61,7 @@ if all([path.exists() for path in [inf_dev_set_path, inf_test_set_path, inf_trai
     data_vocab = ds.load_vocab(tb_root_dir_path, 'gold', la_name, tb_name, seq_type, ma_name)
 else:
     partition = ['dev', 'test', 'train']
-    token_samples, inf_morph_samples, uninf_morph_samples, data_vocab = ds.load_data_samples(tb_root_dir_path, partition, la_name, tb_name, seq_type, ma_name)
+    token_samples, inf_morph_samples, uninf_morph_samples, data_vocab = ds.load_data_samples(tb_root_dir_path, partition, 'gold', la_name, tb_name, seq_type, ma_name)
     token_lengths = {t: torch.tensor(token_samples[t][1], dtype=torch.long) for t in token_samples}
     token_samples = {t: torch.tensor(token_samples[t][0], dtype=torch.long) for t in token_samples}
     inf_analysis_lengths = {t: torch.tensor(inf_morph_samples[t][1], dtype=torch.long) for t in inf_morph_samples}
@@ -86,7 +86,7 @@ if all([path.exists() for path in [form_ft_emb_path, lemma_ft_emb_path]]):
     form_ft_emb = torch.load(form_ft_emb_path)
     lemma_ft_emb = torch.load(lemma_ft_emb_path)
 else:
-    _, _, form_ft_emb, lemma_ft_emb = ds.load_ft_emb(tb_root_dir_path, ft_root_dir_path, data_vocab, la_name, tb_name, seq_type, ma_name)
+    _, _, form_ft_emb, lemma_ft_emb = ds.load_ft_emb(tb_root_dir_path, ft_root_dir_path, 'gold', data_vocab, la_name, tb_name, seq_type, ma_name)
     # token_ft_emb.weight.requires_grad = False
     # form_ft_emb.weight.requires_grad = False
     # lemma_ft_emb.weight.requires_grad = False

@@ -704,11 +704,12 @@ def to_conllu_mono_lattice_str(tokens, analyses):
     for token, analysis in zip(tokens, [analysis[analysis != '<PAD>'].reshape(analysis.shape[0], -1) for analysis in analyses]):
         # Duplicate the postag value (UPOSTAG, XPOSTAG)
         analysis = np.repeat(analysis, repeats=[1, 1, 2, 1], axis=0)
-        morphemes = analysis.T
+        morphemes = analysis.astype('object').T
         # Add token (multi-word) line: x-y token _ _ _ _ _ _ _ _
         if len(morphemes) > 1:
             rows.append([f'{morph_id}-{morph_id + len(morphemes) - 1}', token] + ['_'] * 8)
         for morpheme in morphemes:
+            morpheme[0] = token
             rows.append([morph_id] + morpheme.tolist() + [morph_id - 1] + ['_'] * 3)
             morph_id += 1
     df = pd.DataFrame(rows, columns=conllu_column_names)
