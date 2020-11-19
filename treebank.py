@@ -44,6 +44,7 @@ def _dfs(edges, cur_node_id, next_node_id, analysis_in, analyses):
 
 
 def _parse_sent_analyses(df, column_names):
+    print(f'parse sent analyses: {df.sent_id.unique().item()}')
     token_analyses = {}
     token_edges = defaultdict(lambda: defaultdict(list))
     for row in df.itertuples():
@@ -99,6 +100,7 @@ def _load_data_lattices(root_path, partition, ner_feat, ner_only, baseline, data
 
 
 def _to_data_lattices(treebank):
+    print('to data lattices')
     dataset = {}
     column_names = _lattice_fields + ['analysis_id', 'morpheme_id']
     for partition_type in treebank:
@@ -475,17 +477,17 @@ def _save_base(tb_path, root_path, partition, ner_feat, ner_only, baseline, lang
 def _save_base_morpheme_tag_type(root_path, partition, baseline, la_name, tb_name, mtag_level):
     base_dataset = _load_data_lattices(root_path / la_name / tb_name, partition, baseline)
     _add_morpheme_type(base_dataset)
-    _save_data_lattices(root_path / la_name / tb_name / 'seq' / f'{mtag_level}-mtag', base_dataset, baseline, 'type')
+    _save_data_lattices(root_path / la_name / f'{tb_name}-NER' / 'seq' / f'{mtag_level}-mtag', base_dataset, baseline, 'type')
 
 
 def _save_base_multi_tag(root_path, partition, baseline, la_name, tb_name, mtag_level):
     if mtag_level == 'token':
-        base_dataset = _load_data_lattices(root_path / la_name / tb_name, partition, baseline)
+        base_dataset = _load_data_lattices(root_path / la_name / f'{tb_name}-NER', partition, baseline)
         grouped_dataset = _get_grouped_analysis_dataset(base_dataset, _lattice_fields)
     else:
-        type_dataset = _load_data_lattices(root_path / la_name / tb_name / 'seq' / f'{mtag_level}-mtag', partition, baseline, 'type')
+        type_dataset = _load_data_lattices(root_path / la_name / f'{tb_name}-NER' / 'seq' / f'{mtag_level}-mtag', partition, baseline, 'type')
         grouped_dataset = _get_grouped_morpheme_type_dataset(type_dataset, _lattice_fields)
-    _save_data_lattices(root_path / la_name / tb_name / 'seq' / f'{mtag_level}-mtag', grouped_dataset, baseline, 'mtag')
+    _save_data_lattices(root_path / la_name / f'{tb_name}-NER' / 'seq' / f'{mtag_level}-mtag', grouped_dataset, baseline, 'mtag')
 
 
 def _save_uninfused_lattices(tb_path, root_path, partition, ner_feat, ner_only, baseline, lang, la_name, tb_name, ma_name, tb_scheme):
@@ -518,32 +520,32 @@ def _save_infused_lattices(root_path, partition, ner_feat, ner_only, baseline, l
 
 
 # Load data lattices
-def _load_base_data_lattices(root_path, partition, baseline, la_name, tb_name, ma_name):
+def _load_base_data_lattices(root_path, partition, ner_feat, ner_only, baseline, la_name, tb_name, ma_name):
     try:
-        base_dataset = _load_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, partition, baseline)
+        base_dataset = _load_data_lattices(root_path / la_name / f'{tb_name}-NER' / 'lattice' / ma_name, partition, ner_feat, ner_only, baseline)
     except FileNotFoundError:
-        base_dataset = _load_data_lattices(root_path / la_name / tb_name, partition, baseline)
+        base_dataset = _load_data_lattices(root_path / la_name / f'{tb_name}-NER', partition, ner_feat, ner_only, baseline)
     return base_dataset
 
 
 # API ##################################################################################################################
-def tb_load_base(root_path, partition, baseline, la_name, tb_name):
-    return _load_data_lattices(root_path / la_name / tb_name, partition, baseline)
+def tb_load_base(root_path, partition, ner_feat, ner_only, baseline, la_name, tb_name):
+    return _load_data_lattices(root_path / la_name / f'{tb_name}-NER', partition, ner_feat, ner_only, baseline)
 
 
 def tb_load_base_mtag(root_path, partition, baseline, la_name, tb_name, mtag_level):
-    return _load_data_lattices(root_path / la_name / tb_name / 'seq' / f'{mtag_level}', partition, baseline, 'mtag')
+    return _load_data_lattices(root_path / la_name / f'{tb_name}-NER' / 'seq' / f'{mtag_level}', partition, baseline, 'mtag')
 
 
-def tb_load_lattices(root_path, partition, baseline, la_name, tb_name, ma_name, inf_type):
-    base_dataset = _load_base_data_lattices(root_path, partition, baseline, la_name, tb_name, ma_name)
-    lattices_dataset = _load_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, partition, baseline, inf_type)
+def tb_load_lattices(root_path, partition, ner_feat, ner_only, baseline, la_name, tb_name, ma_name, inf_type):
+    base_dataset = _load_base_data_lattices(root_path, partition, ner_feat, ner_only, baseline, la_name, tb_name, ma_name)
+    lattices_dataset = _load_data_lattices(root_path / la_name / f'{tb_name}-NER' / 'lattice' / ma_name, partition, ner_feat, ner_only, baseline, inf_type)
     return lattices_dataset, base_dataset
 
 
 def tb_export_tokens(root_path, tb_path, partition, ner_feat, ner_only, lang, la_name, tb_name):
     ner_suff = f'ner_{ner_feat}' if not ner_only else f'.ner_{ner_feat}_only'
-    dataset = tb_load_base(root_path, partition, 'gold', la_name, tb_name)
+    dataset = tb_load_base(root_path, partition, ner_feat, ner_only, 'gold', la_name, tb_name)
     for partition_type in dataset:
         tokens = []
         for x in dataset[partition_type]:
@@ -570,8 +572,8 @@ def main():
     ma_name = 'heblex'
     lang = 'Hebrew'
     tb_name = 'HTB'
-    # tb_export_tokens(root_path, tb_path, partition, ner_feat[0], False, lang, la_name, tb_name)
-    # _save_base(tb_path, root_path, partition, ner_feat[0], False, 'gold', lang, la_name, tb_name, scheme)
+    tb_export_tokens(root_path, tb_path, partition[:1], ner_feat[0], False, lang, la_name, tb_name)
+    # _save_base(tb_path, root_path, partition[:1], ner_feat[0], False, 'gold', lang, la_name, tb_name, scheme)
     _save_uninfused_lattices(tb_path, root_path, partition[:1], ner_feat[0], False, 'gold', lang, la_name, tb_name, ma_name, scheme)
     _save_infused_lattices(root_path, partition[:1], ner_feat[0], False, 'gold', la_name, tb_name, ma_name)
 
