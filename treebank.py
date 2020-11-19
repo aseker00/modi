@@ -69,25 +69,28 @@ def _lattice_to_dataframe(lattice, column_names):
     return pd.DataFrame(rows, columns=column_names)
 
 
-def _save_data_lattices(root_path, dataset, baseline, data_type=None):
+def _save_data_lattices(root_path, dataset, ner_feat, ner_only, baseline, data_type=None):
     os.makedirs(root_path, exist_ok=True)
+    ner_suff = f'ner_{ner_feat}' if not ner_only else f'.ner_{ner_feat}_only'
     for partition_type in dataset:
         df = pd.concat(dataset[partition_type]).reset_index(drop=True)
         if data_type:
-            file_path = root_path / f'{partition_type}-{baseline}-{data_type}.lattices.csv'
+            file_path = root_path / f'{partition_type}-{baseline}-{data_type}.{ner_suff}.lattices.csv'
         else:
-            file_path = root_path / f'{partition_type}-{baseline}.lattices.csv'
+            file_path = root_path / f'{partition_type}-{baseline}.{ner_suff}.lattices.csv'
+
         df.to_csv(str(file_path))
 
 
-def _load_data_lattices(root_path, partition, baseline, data_type=None):
+def _load_data_lattices(root_path, partition, ner_feat, ner_only, baseline, data_type=None):
     dataset = {}
+    ner_suff = f'ner_{ner_feat}' if not ner_only else f'.ner_{ner_feat}_only'
     for partition_type in partition:
         if data_type:
-            file_path = root_path / f'{partition_type}-{baseline}-{data_type}.lattices.csv'
+            file_path = root_path / f'{partition_type}-{baseline}-{data_type}.{ner_suff}.lattices.csv'
         else:
-            file_path = root_path / f'{partition_type}-{baseline}.lattices.csv'
-        print(f'loading {file_path.stem}')
+            file_path = root_path / f'{partition_type}-{baseline}.{ner_suff}.lattices.csv'
+        print(f'loading {file_path}')
         df = pd.read_csv(str(file_path), index_col=0, keep_default_na=False)
         lattices = {sent_id: x.reset_index(drop=True) for sent_id, x in df.groupby(df.sent_id)}
         dataset[partition_type] = [lattices[sent_id] for sent_id in sorted(lattices)]
@@ -291,7 +294,7 @@ def _load_spmrl_conll_partition(lattices_file_path, tokens_file_path, column_nam
     for i, (lattice, tokens) in enumerate(zip(lattice_sentences, token_sentences)):
         sent_id = i + 1
         tokens = {j + 1: t for j, t in enumerate(tokens)}
-        lattice = [line.split() for line in lattice]
+        lattice = [line.split('\t') for line in lattice]
         df = _build_spmrl_sample(sent_id, lattice, tokens, column_names, is_gold)
         partition.append(df)
     return partition
@@ -367,7 +370,7 @@ def _load_ud_conllu_partition(lattices_file_path, column_names):
     for i, lattice in enumerate(lattice_sentences):
         sent_id = i + 1
         # Bug fix - invalid lines (missing '_') found in the Hebrew treebank
-        lattice = [line.replace("\t\t", "\t_\t").replace("\t\t", "\t_\t").split() for line in lattice if line[0] != '#']
+        lattice = [line.replace("\t\t", "\t_\t").replace("\t\t", "\t_\t").split('\t') for line in lattice if line[0] != '#']
         # Bug fix - clean unicode characters
         lattice = _normalize_lattice(lattice)
 
@@ -376,18 +379,19 @@ def _load_ud_conllu_partition(lattices_file_path, column_names):
     return partition
 
 
-def _load_ud_conllu(tb_path, partition, baseline, column_names, lang, la_name, tb_name, ma_name=None):
+def _load_ud_conllu(tb_path, partition, ner_feat, ner_only, baseline, column_names, lang, la_name, tb_name, ma_name=None):
     treebank = {}
+    ner_suff = f'ner_{ner_feat}' if not ner_only else f'.ner_{ner_feat}_only'
     for partition_type in partition:
         if baseline == 'gold':
             file_name = f'{la_name}_{tb_name}-ud-{partition_type}'.lower()
         else:
             file_name = f'{la_name}_{tb_name}-ud-{partition_type}-{baseline}'.lower()
         if ma_name is not None:
-            lattices_path = tb_path / f'conllul/UL_{lang}-{tb_name}' / f'{file_name}.{ma_name}.conllul'
+            lattices_path = tb_path / f'conllul/UL_{lang}-{tb_name}-NER' / f'{file_name}.{ma_name}.{ner_suff}.conllul'
         else:
-            lattices_path = tb_path / f'UD_{lang}-{tb_name}' / f'{file_name}.conllu'
-        print(f'loading {lattices_path.stem} treebank file')
+            lattices_path = tb_path / f'UD_{lang}-{tb_name}-NER' / f'{file_name}.{ner_suff}.conllu'
+        print(f'loading {lattices_path} treebank file')
         lattices = _load_ud_conllu_partition(lattices_path, column_names)
         print(f'{partition_type} lattices: {len(lattices)}')
         treebank[partition_type] = lattices
@@ -455,7 +459,7 @@ def _infuse_tb_lattices(lattices, base_lattices):
     return infused_dataset
 
 
-def _save_base(tb_path, root_path, partition, baseline, lang, la_name, tb_name, tb_scheme):
+def _save_base(tb_path, root_path, partition, ner_feat, ner_only, baseline, lang, la_name, tb_name, tb_scheme):
     if tb_scheme == 'SPMRL':
         remove_zvl = tb_name[-1] == 'z'
         base_lattices = _load_spmrl_conll(tb_path, partition, _lattice_fields, lang, tb_name[:-1] if remove_zvl else tb_name)
@@ -463,9 +467,9 @@ def _save_base(tb_path, root_path, partition, baseline, lang, la_name, tb_name, 
             indices = _get_sent_indices_to_remove(base_lattices['train'], ['ZVL'])
             base_lattices['train'] = [df for df in base_lattices['train'] if df.sent_id.unique() not in indices]
     else:
-        base_lattices = _load_ud_conllu(tb_path, partition, baseline, _lattice_fields, lang, la_name, tb_name)
+        base_lattices = _load_ud_conllu(tb_path, partition, ner_feat, ner_only, baseline, _lattice_fields, lang, la_name, tb_name)
     base_dataset = _to_data_lattices(base_lattices)
-    _save_data_lattices(root_path / la_name / tb_name, base_dataset, baseline)
+    _save_data_lattices(root_path / la_name / f'{tb_name}-NER', base_dataset, ner_feat, ner_only, baseline)
 
 
 def _save_base_morpheme_tag_type(root_path, partition, baseline, la_name, tb_name, mtag_level):
@@ -484,8 +488,8 @@ def _save_base_multi_tag(root_path, partition, baseline, la_name, tb_name, mtag_
     _save_data_lattices(root_path / la_name / tb_name / 'seq' / f'{mtag_level}-mtag', grouped_dataset, baseline, 'mtag')
 
 
-def _save_uninfused_lattices(tb_path, root_path, partition, baseline, lang, la_name, tb_name, ma_name, tb_scheme):
-    base_dataset = _load_data_lattices(root_path / la_name / tb_name, partition, baseline)
+def _save_uninfused_lattices(tb_path, root_path, partition, ner_feat, ner_only, baseline, lang, la_name, tb_name, ma_name, tb_scheme):
+    base_dataset = _load_data_lattices(root_path / la_name / f'{tb_name}-NER', partition, ner_feat, ner_only, baseline)
     if tb_scheme == 'SPMRL':
         remove_zvl = tb_name[-1] == 'z'
         lattices = _load_spmrl_conll(tb_path, partition, _lattice_fields, lang, tb_name[:-1] if remove_zvl else tb_name, ma_name)
@@ -494,23 +498,23 @@ def _save_uninfused_lattices(tb_path, root_path, partition, baseline, lang, la_n
             indices = _get_sent_indices_to_remove(base_lattices['train'], ['ZVL'])
             lattices['train'] = [df for df in lattices['train'] if df.sent_id.unique() not in indices]
     else:
-        lattices = _load_ud_conllu(tb_path, partition, baseline, _lattice_fields, lang, la_name, tb_name, ma_name)
+        lattices = _load_ud_conllu(tb_path, partition, ner_feat, ner_only, baseline, _lattice_fields, lang, la_name, tb_name, ma_name)
     lattices_dataset = _to_data_lattices(lattices)
     valid_sent_mask = _validate_data_lattices(lattices_dataset, base_dataset)
     if any([not all(valid_sent_mask[t]) for t in partition]):
         for partition_type in partition:
             lattices_dataset[partition_type] = [d for d, m in zip(lattices_dataset[partition_type], valid_sent_mask[partition_type]) if m]
             base_dataset[partition_type] = [d for d, m in zip(base_dataset[partition_type], valid_sent_mask[partition_type]) if m]
-        _save_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, base_dataset, baseline)
-        _save_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, lattices_dataset, baseline, 'uninf')
+        _save_data_lattices(root_path / la_name / f'{tb_name}-NER' / 'lattice' / ma_name, base_dataset, baseline)
+        _save_data_lattices(root_path / la_name / f'{tb_name}-NER' / 'lattice' / ma_name, lattices_dataset, baseline, 'uninf')
     else:
-        _save_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, lattices_dataset, baseline, 'uninf')
+        _save_data_lattices(root_path / la_name / f'{tb_name}-NER' / 'lattice' / ma_name, lattices_dataset, baseline, 'uninf')
 
 
-def _save_infused_lattices(root_path, partition, baseline, la_name, tb_name, ma_name):
+def _save_infused_lattices(root_path, partition, ner_feat, ner_only, baseline, la_name, tb_name, ma_name):
     lattices_dataset, base_dataset = tb_load_lattices(root_path, partition, baseline, la_name, tb_name, ma_name, 'uninf')
     infused_lattices_dataset = _infuse_tb_lattices(lattices_dataset, base_dataset)
-    _save_data_lattices(root_path / la_name / tb_name / 'lattice' / ma_name, infused_lattices_dataset, baseline, 'inf')
+    _save_data_lattices(root_path / la_name / f'{tb_name}-NER' / 'lattice' / ma_name, infused_lattices_dataset, baseline, 'inf')
 
 
 # Load data lattices
@@ -537,7 +541,8 @@ def tb_load_lattices(root_path, partition, baseline, la_name, tb_name, ma_name, 
     return lattices_dataset, base_dataset
 
 
-def tb_export_tokens(root_path, tb_path, partition, lang, la_name, tb_name):
+def tb_export_tokens(root_path, tb_path, partition, ner_feat, ner_only, lang, la_name, tb_name):
+    ner_suff = f'ner_{ner_feat}' if not ner_only else f'.ner_{ner_feat}_only'
     dataset = tb_load_base(root_path, partition, 'gold', la_name, tb_name)
     for partition_type in dataset:
         tokens = []
@@ -546,7 +551,7 @@ def tb_export_tokens(root_path, tb_path, partition, lang, la_name, tb_name):
             sent_tokens = [d[i] for i in sorted(d)]
             tokens.append(sent_tokens)
         file_name = f'{la_name}_{tb_name}-ud-{partition_type}'.lower()
-        file_path = tb_path / f'UD_{lang}-{tb_name}' / f'{file_name}.tokens.txt'
+        file_path = tb_path / f'UD_{lang}-{tb_name}-NER' / f'{file_name}.{ner_suff}.tokens.txt'
         with open(file_path, 'w', encoding='utf-8') as f:
             for sent_tokens in tokens:
                 f.write('\n'.join(sent_tokens))
@@ -557,41 +562,18 @@ def tb_export_tokens(root_path, tb_path, partition, lang, la_name, tb_name):
 
 def main():
     scheme = 'UD'
-    # scheme = 'SPMRL'
-    schemes = {'UD': 'UniversalDependencies', 'SPMRL': 'HebrewResources'}
     partition = ['dev', 'test', 'train']
+    ner_feat = ['plo', 'nocat', 'full']
     root_path = Path.home() / f'dev/aseker00/modi/tb/{scheme}'
-    tb_path = Path.home() / f'dev/onlplab/{schemes[scheme]}'
-    if scheme == 'UD':
-        langs = {'ar': 'Arabic', 'en': 'English', 'he': 'Hebrew', 'tr': 'Turkish'}
-        tb_names = {'ar': 'PADT', 'en': 'EWT', 'he': 'HTB', 'tr': 'IMST'}
-        ma_names = {'ar': 'calima-star', 'he': 'heblex', 'tr': 'trmorph2'}
-        # ma_names = {'ar': 'Apertium-E', 'he': 'Apertium', 'tr': 'ApertiumMA'}
-        # ma_names = {'ar': 'baseline', 'he': 'baseline', 'tr': 'baseline'}
-    else:
-        langs = {'he': 'Hebrew'}
-        tb_names = {'he': 'HEBTB'}
-        ma_names = {'he': 'heblex'}
-
-    for la_name in ['ar', 'en', 'he', 'tr']:
-        if la_name not in tb_names:
-            continue
-        lang = langs[la_name]
-        tb_name = tb_names[la_name]
-        # tb_export_tokens(root_path, tb_path, partition, lang, la_name, tb_name)
-        _save_base(tb_path, root_path, partition, 'gold', lang, la_name, tb_name, scheme)
-        if scheme == 'UD':
-            _save_base(tb_path, root_path, partition, 'udpipe', lang, la_name, tb_name, scheme)
-        if la_name in ['ar', 'he', 'tr']:
-            # if scheme == 'SPMRL':
-            #     _save_gold_morpheme_tag_type(root_path, partition, 'gold', la_name, tb_name, 'morpheme-type')
-            #     _save_gold_multi_tag(root_path, partition, 'gold', la_name, tb_name, 'morpheme-type')
-            _save_base_multi_tag(root_path, partition, 'gold', la_name, tb_name, 'token')
-            if la_name in ['he', 'tr']:
-                if la_name in ma_names:
-                    ma_name = ma_names[la_name]
-                    _save_uninfused_lattices(tb_path, root_path, partition, 'gold', lang, la_name, tb_name, ma_name, scheme)
-                    _save_infused_lattices(root_path, partition, 'gold', la_name, tb_name, ma_name)
+    tb_path = Path.home() / f'dev/aseker00/modi/data/for_amit'
+    la_name = 'he'
+    ma_name = 'heblex'
+    lang = 'Hebrew'
+    tb_name = 'HTB'
+    # tb_export_tokens(root_path, tb_path, partition, ner_feat[0], False, lang, la_name, tb_name)
+    # _save_base(tb_path, root_path, partition, ner_feat[0], False, 'gold', lang, la_name, tb_name, scheme)
+    _save_uninfused_lattices(tb_path, root_path, partition[:1], ner_feat[0], False, 'gold', lang, la_name, tb_name, ma_name, scheme)
+    _save_infused_lattices(root_path, partition[:1], ner_feat[0], False, 'gold', la_name, tb_name, ma_name)
 
 
 if __name__ == '__main__':
