@@ -507,16 +507,16 @@ def _save_uninfused_lattices(tb_path, root_path, partition, ner_feat, ner_only, 
         for partition_type in partition:
             lattices_dataset[partition_type] = [d for d, m in zip(lattices_dataset[partition_type], valid_sent_mask[partition_type]) if m]
             base_dataset[partition_type] = [d for d, m in zip(base_dataset[partition_type], valid_sent_mask[partition_type]) if m]
-        _save_data_lattices(root_path / la_name / f'{tb_name}-NER' / 'lattice' / ma_name, base_dataset, baseline)
-        _save_data_lattices(root_path / la_name / f'{tb_name}-NER' / 'lattice' / ma_name, lattices_dataset, baseline, 'uninf')
+        _save_data_lattices(root_path / la_name / f'{tb_name}-NER' / 'lattice' / ma_name, base_dataset, ner_feat, ner_only, baseline)
+        _save_data_lattices(root_path / la_name / f'{tb_name}-NER' / 'lattice' / ma_name, lattices_dataset, ner_feat, ner_only, baseline, 'uninf')
     else:
-        _save_data_lattices(root_path / la_name / f'{tb_name}-NER' / 'lattice' / ma_name, lattices_dataset, baseline, 'uninf')
+        _save_data_lattices(root_path / la_name / f'{tb_name}-NER' / 'lattice' / ma_name, lattices_dataset, ner_feat, ner_only, baseline, 'uninf')
 
 
 def _save_infused_lattices(root_path, partition, ner_feat, ner_only, baseline, la_name, tb_name, ma_name):
-    lattices_dataset, base_dataset = tb_load_lattices(root_path, partition, baseline, la_name, tb_name, ma_name, 'uninf')
+    lattices_dataset, base_dataset = tb_load_lattices(root_path, partition, ner_feat, ner_only, baseline, la_name, tb_name, ma_name, 'uninf')
     infused_lattices_dataset = _infuse_tb_lattices(lattices_dataset, base_dataset)
-    _save_data_lattices(root_path / la_name / f'{tb_name}-NER' / 'lattice' / ma_name, infused_lattices_dataset, baseline, 'inf')
+    _save_data_lattices(root_path / la_name / f'{tb_name}-NER' / 'lattice' / ma_name, infused_lattices_dataset, ner_feat, ner_only, baseline, 'inf')
 
 
 # Load data lattices
