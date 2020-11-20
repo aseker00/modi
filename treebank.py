@@ -72,20 +72,24 @@ def _lattice_to_dataframe(lattice, column_names):
 
 def _save_data_lattices(root_path, dataset, ner_feat, ner_only, baseline, data_type=None):
     os.makedirs(root_path, exist_ok=True)
-    ner_suff = f'ner_{ner_feat}' if not ner_only else f'.ner_{ner_feat}_only'
+    ner_suff = f'ner_{ner_feat}' if not ner_only else f'ner_{ner_feat}_only'
     for partition_type in dataset:
-        df = pd.concat(dataset[partition_type]).reset_index(drop=True)
+        # df = pd.concat(dataset[partition_type]).reset_index(drop=True)
         if data_type:
             file_path = root_path / f'{partition_type}-{baseline}-{data_type}.{ner_suff}.lattices.csv'
         else:
             file_path = root_path / f'{partition_type}-{baseline}.{ner_suff}.lattices.csv'
-
-        df.to_csv(str(file_path))
+        for i, df in enumerate(dataset[partition_type]):
+            if i == 0:
+                df.to_csv(str(file_path))
+            else:
+                df.to_csv(str(file_path), mode='a', header=False)
+        # df.to_csv(str(file_path))
 
 
 def _load_data_lattices(root_path, partition, ner_feat, ner_only, baseline, data_type=None):
     dataset = {}
-    ner_suff = f'ner_{ner_feat}' if not ner_only else f'.ner_{ner_feat}_only'
+    ner_suff = f'ner_{ner_feat}' if not ner_only else f'ner_{ner_feat}_only'
     for partition_type in partition:
         if data_type:
             file_path = root_path / f'{partition_type}-{baseline}-{data_type}.{ner_suff}.lattices.csv'
@@ -383,7 +387,7 @@ def _load_ud_conllu_partition(lattices_file_path, column_names):
 
 def _load_ud_conllu(tb_path, partition, ner_feat, ner_only, baseline, column_names, lang, la_name, tb_name, ma_name=None):
     treebank = {}
-    ner_suff = f'ner_{ner_feat}' if not ner_only else f'.ner_{ner_feat}_only'
+    ner_suff = f'ner_{ner_feat}' if not ner_only else f'ner_{ner_feat}_only'
     for partition_type in partition:
         if baseline == 'gold':
             file_name = f'{la_name}_{tb_name}-ud-{partition_type}'.lower()
@@ -544,7 +548,7 @@ def tb_load_lattices(root_path, partition, ner_feat, ner_only, baseline, la_name
 
 
 def tb_export_tokens(root_path, tb_path, partition, ner_feat, ner_only, lang, la_name, tb_name):
-    ner_suff = f'ner_{ner_feat}' if not ner_only else f'.ner_{ner_feat}_only'
+    ner_suff = f'ner_{ner_feat}' if not ner_only else f'ner_{ner_feat}_only'
     dataset = tb_load_base(root_path, partition, ner_feat, ner_only, 'gold', la_name, tb_name)
     for partition_type in dataset:
         tokens = []
@@ -572,8 +576,8 @@ def main():
     ma_name = 'heblex'
     lang = 'Hebrew'
     tb_name = 'HTB'
+    _save_base(tb_path, root_path, partition[:1], ner_feat[0], False, 'gold', lang, la_name, tb_name, scheme)
     tb_export_tokens(root_path, tb_path, partition[:1], ner_feat[0], False, lang, la_name, tb_name)
-    # _save_base(tb_path, root_path, partition[:1], ner_feat[0], False, 'gold', lang, la_name, tb_name, scheme)
     _save_uninfused_lattices(tb_path, root_path, partition[:1], ner_feat[0], False, 'gold', lang, la_name, tb_name, ma_name, scheme)
     _save_infused_lattices(root_path, partition[:1], ner_feat[0], False, 'gold', la_name, tb_name, ma_name)
 
