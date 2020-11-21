@@ -13,44 +13,31 @@ from pathlib import Path
 root_dir_path = Path.home() / 'dev/aseker00/modi'
 ft_root_dir_path = Path.home() / 'dev/aseker00/fasttext'
 
+f = 1
+ner_only = False
+ner_feat = ['plo', 'nocat', 'full']
 scheme = 'UD'
-# scheme = 'SPMRL'
-# la_name = 'ar'
 la_name = 'he'
-# la_name = 'tr'
-if la_name == 'tr':
-    tb_name = 'IMST'
-    ma_name = 'trmorph2'
-    # ma_name = 'ApertiumMA'
-elif la_name == 'ar':
-    tb_name = 'PADT'
-    ma_name = 'calima-star'
-    # ma_name = 'Apertium-E'
-else:
-    if scheme == 'UD':
-        tb_name = 'HTB'
-        ma_name = 'heblex'
-        # ma_name = 'Apertium'
-    else:
-        tb_name = 'HEBTB'
-        ma_name = 'heblex'
+tb_name = 'HTB'
+ma_name = 'heblex'
 
 seq_type = 'lattice'
 tb_root_dir_path = root_dir_path / 'tb' / scheme
-data_dir_path = root_dir_path / 'data' / scheme / la_name / tb_name / f'{seq_type}' / ma_name
-out_dir_path = root_dir_path / 'out' / scheme / la_name / tb_name / f'{seq_type}' / ma_name
+data_dir_path = root_dir_path / 'data' / scheme / la_name / f'{tb_name}-NER' / f'{seq_type}' / ma_name
+out_dir_path = root_dir_path / 'out' / scheme / la_name / f'{tb_name}-NER' / f'{seq_type}' / ma_name
 os.makedirs(str(out_dir_path), exist_ok=True)
 os.makedirs(str(data_dir_path), exist_ok=True)
 
-inf_dev_set_path = data_dir_path / 'dev-gold-inf.pth'
-inf_test_set_path = data_dir_path / 'test-gold-inf.pth'
-inf_train_set_path = data_dir_path / 'train-gold-inf.pth'
-uninf_dev_set_path = data_dir_path / 'dev-gold-uninf.pth'
-uninf_test_set_path = data_dir_path / 'test-gold-uninf.pth'
-# char_ft_emb_path = data_dir_path / 'char-ft-gold-emb.pth'
-# token_ft_emb_path = data_dir_path / 'token-ft-gold-emb.pth'
-form_ft_emb_path = data_dir_path / 'form-ft-gold-emb.pth'
-lemma_ft_emb_path = data_dir_path / 'lemma-ft-gold-emb.pth'
+ner_suff = f'ner_{ner_feat[f]}' if not ner_only else f'ner_{ner_feat[f]}_only'
+inf_dev_set_path = data_dir_path / f'dev-gold-inf.{ner_suff}.pth'
+inf_test_set_path = data_dir_path / f'test-gold-inf.{ner_suff}.pth'
+inf_train_set_path = data_dir_path / f'train-gold-inf.{ner_suff}.pth'
+uninf_dev_set_path = data_dir_path / f'dev-gold-uninf.{ner_suff}.pth'
+uninf_test_set_path = data_dir_path / f'test-gold-uninf.{ner_suff}.pth'
+# char_ft_emb_path = data_dir_path / f'char-ft-gold-emb.{ner_suff}.pth'
+# token_ft_emb_path = data_dir_path / f'token-ft-gold-emb.{ner_suff}.pth'
+form_ft_emb_path = data_dir_path / f'form-ft-gold-emb.{ner_suff}.pth'
+lemma_ft_emb_path = data_dir_path / f'lemma-ft-gold-emb.{ner_suff}.pth'
 
 if all([path.exists() for path in [inf_dev_set_path, inf_test_set_path, inf_train_set_path, uninf_dev_set_path, uninf_test_set_path]]):
     inf_dev_set = torch.load(inf_dev_set_path)
@@ -61,7 +48,7 @@ if all([path.exists() for path in [inf_dev_set_path, inf_test_set_path, inf_trai
     data_vocab = ds.load_vocab(tb_root_dir_path, 'gold', la_name, tb_name, seq_type, ma_name)
 else:
     partition = ['dev', 'test', 'train']
-    token_samples, inf_morph_samples, uninf_morph_samples, data_vocab = ds.load_data_samples(tb_root_dir_path, partition, 'gold', la_name, tb_name, seq_type, ma_name)
+    token_samples, inf_morph_samples, uninf_morph_samples, data_vocab = ds.load_data_samples(tb_root_dir_path, partition, ner_feat[f], ner_only, 'gold', la_name, tb_name, seq_type, ma_name)
     token_lengths = {t: torch.tensor(token_samples[t][1], dtype=torch.long) for t in token_samples}
     token_samples = {t: torch.tensor(token_samples[t][0], dtype=torch.long) for t in token_samples}
     inf_analysis_lengths = {t: torch.tensor(inf_morph_samples[t][1], dtype=torch.long) for t in inf_morph_samples}
@@ -86,7 +73,7 @@ if all([path.exists() for path in [form_ft_emb_path, lemma_ft_emb_path]]):
     form_ft_emb = torch.load(form_ft_emb_path)
     lemma_ft_emb = torch.load(lemma_ft_emb_path)
 else:
-    _, _, form_ft_emb, lemma_ft_emb = ds.load_ft_emb(tb_root_dir_path, ft_root_dir_path, 'gold', data_vocab, la_name, tb_name, seq_type, ma_name)
+    _, _, form_ft_emb, lemma_ft_emb = ds.load_ft_emb(tb_root_dir_path, ft_root_dir_path, ner_feat[f], ner_only, 'gold', data_vocab, la_name, tb_name, seq_type, ma_name)
     # token_ft_emb.weight.requires_grad = False
     # form_ft_emb.weight.requires_grad = False
     # lemma_ft_emb.weight.requires_grad = False

@@ -132,11 +132,11 @@ def _split_feats(feats):
     for f in feats:
         fmap = defaultdict(list)
         for ff in f.split('|'):
-            for fff in ff.split('-'):
-                if fff == '_':
-                    continue
-                name, value = fff.split('=')
-                fmap[name].append(value)
+            # for fff in ff.split('-'):
+            if ff == '_':
+                continue
+            name, value = ff.split('=')
+            fmap[name].append(value)
         for name in fmap:
             value = ''.join(fmap[name])
             feat_set.add(f'{name}={value}')
@@ -504,13 +504,14 @@ def _get_var_morpheme_samples(analyses_df, data_vocab, max_morphemes):
     return morpheme_samples[morpheme_samples_df.sent_idx.unique() - 1]
 
 
-def _load_data(root_path, partition, baseline, data_type=None):
+def _load_data(root_path, partition, ner_feat, ner_only, baseline, data_type=None):
     dataset = {}
+    ner_suff = f'ner_{ner_feat}' if not ner_only else f'ner_{ner_feat}_only'
     for partition_type in partition:
         if data_type:
-            file_path = root_path / f'{partition_type}-{baseline}-{data_type}.lattices.csv'
+            file_path = root_path / f'{partition_type}-{baseline}-{data_type}.{ner_suff}.lattices.csv'
         else:
-            file_path = root_path / f'{partition_type}-{baseline}.lattices.csv'
+            file_path = root_path / f'{partition_type}-{baseline}.{ner_suff}.lattices.csv'
 
         # Bug fix: load the actual tokens 'NA', 'nan', etc. (this actually happens in the tr_imst treebank)
         dataset[partition_type] = pd.read_csv(str(file_path), index_col=0, keep_default_na=False)
@@ -632,34 +633,34 @@ def seg_eval_samples(samples):
     return _seg_tag_eval(gold_df, pred_df)
 
 
-def load_vocab(root_path, baseline, la_name, tb_name, seq_type='', ma_name=None):
+def load_vocab(root_path, ner_feat, ner_only, baseline, la_name, tb_name, seq_type='', ma_name=None):
     if seq_type == 'lattice':
-        vocab_dir_path = root_path / la_name / tb_name / f'{seq_type}' / ma_name / f'vocab-{baseline}'
+        vocab_dir_path = root_path / la_name / f'{tb_name}-NER' / f'{seq_type}' / ma_name / f'vocab-{baseline}' / (f'{ner_feat}' if not ner_only else f'{ner_feat}_only')
     elif seq_type.endswith('-mtag'):
-        vocab_dir_path = root_path / la_name / tb_name / 'seq' / f'{seq_type}' / f'vocab-{baseline}'
+        vocab_dir_path = root_path / la_name / f'{tb_name}-NER' / 'seq' / f'{seq_type}' / f'vocab-{baseline}'
     else:
-        vocab_dir_path = root_path / la_name / tb_name / f'vocab-{baseline}'
+        vocab_dir_path = root_path / la_name / f'{tb_name}-NER' / f'vocab-{baseline}' / (f'{ner_feat}' if not ner_only else f'{ner_feat}_only')
     return _load_vocab_entries(vocab_dir_path)
 
 
-def load_ft_emb(root_path, ft_root_path, baseline, data_vocab, la_name, tb_name, seq_type='', ma_name=None):
+def load_ft_emb(root_path, ft_root_path, ner_feat, ner_only, baseline, data_vocab, la_name, tb_name, seq_type='', ma_name=None):
     ft.ft_model = None
     if seq_type == 'lattice':
-        vocab_dir_path = root_path / la_name / tb_name / f'{seq_type}' / ma_name / f'vocab-{baseline}'
+        vocab_dir_path = root_path / la_name / f'{tb_name}-NER' / f'{seq_type}' / ma_name / f'vocab-{baseline}' / (f'{ner_feat}' if not ner_only else f'{ner_feat}_only')
     elif seq_type.endswith('-mtag'):
-        vocab_dir_path = root_path / la_name / tb_name / 'seq' / f'{seq_type}' / f'vocab-{baseline}'
+        vocab_dir_path = root_path / la_name / f'{tb_name}-NER' / 'seq' / f'{seq_type}' / f'vocab-{baseline}'
     else:
-        vocab_dir_path = root_path / la_name / tb_name / f'vocab-{baseline}'
+        vocab_dir_path = root_path / la_name / f'{tb_name}-NER' / f'vocab-{baseline}' / (f'{ner_feat}' if not ner_only else f'{ner_feat}_only')
     ft_model_path = ft_root_path / f'models/cc.{la_name}.300.bin'
     return _load_morpheme_ft_emb(vocab_dir_path, ft_model_path, data_vocab)
 
 
-def load_data_samples(root_path, partition, baseline, la_name, tb_name, seq_type='', ma_name=None):
+def load_data_samples(root_path, partition, ner_feat, ner_only, baseline, la_name, tb_name, seq_type='', ma_name=None):
     if seq_type == 'lattice':
-        data_dir = root_path / la_name / tb_name / f'{seq_type}' / ma_name
-        infused_lattices_dataset = _load_data(data_dir, partition, baseline, 'inf')
+        data_dir = root_path / la_name / f'{tb_name}-NER' / f'{seq_type}' / ma_name
+        infused_lattices_dataset = _load_data(data_dir, partition, ner_feat, ner_only, baseline, 'inf')
         uninfused_lattices_dataset = _remove_infused_analyses(infused_lattices_dataset)
-        data_vocab = load_vocab(root_path, baseline, la_name, tb_name, seq_type, ma_name=ma_name)
+        data_vocab = load_vocab(root_path, ner_feat, ner_only, baseline, la_name, tb_name, seq_type, ma_name=ma_name)
         seq_samples, infused_morph_samples, uninfused_morph_samples, data_vocab = _load_lattices_data_samples(infused_lattices_dataset, uninfused_lattices_dataset, data_vocab)
         return seq_samples, infused_morph_samples, uninfused_morph_samples, data_vocab
     if seq_type.endswith('-mtag'):
@@ -670,9 +671,9 @@ def load_data_samples(root_path, partition, baseline, la_name, tb_name, seq_type
         morph_samples = {t: _get_fixed_analysis_samples(base_dataset[t], data_vocab, max_morphemes) for t in base_dataset}
         seq_samples = {t: _get_seq_samples(base_dataset[t], data_vocab) for t in base_dataset}
         return seq_samples, morph_samples, data_vocab
-    data_dir = root_path / la_name / tb_name
-    base_dataset = _load_data(data_dir, partition, baseline)
-    data_vocab = load_vocab(root_path, baseline, la_name, tb_name, seq_type)
+    data_dir = root_path / la_name / f'{tb_name}-NER'
+    base_dataset = _load_data(data_dir, partition, ner_feat, ner_only, baseline)
+    data_vocab = load_vocab(root_path, ner_feat, ner_only, baseline, la_name, tb_name, seq_type)
     seq_samples = {t: _get_seq_samples(base_dataset[t], data_vocab) for t in base_dataset}
     if baseline == 'gold':
         max_morphemes = max([base_dataset[t].morpheme_id.max() + 1 for t in base_dataset])
@@ -765,22 +766,18 @@ def save_as_lattice_samples(lattices, out_file_path):
 # API ##################################################################################################################
 
 
-def _save_vocab(root_path, partition, baseline, la_name, tb_name, seq_type='', ma_name=None):
+def _save_vocab(root_path, partition, ner_feat, ner_only, baseline, la_name, tb_name, seq_type='', ma_name=None):
     if seq_type == 'lattice':
-        vocab_dir_path = root_path / la_name / tb_name / f'{seq_type}' / ma_name / f'vocab-{baseline}'
-        lattices_dataset, base_dataset = tb.tb_load_lattices(root_path, partition, baseline, la_name, tb_name, ma_name, 'inf')
+        vocab_dir_path = root_path / la_name / f'{tb_name}-NER' / f'{seq_type}' / ma_name / f'vocab-{baseline}' / (f'{ner_feat}' if not ner_only else f'{ner_feat}_only')
+        lattices_dataset, base_dataset = tb.tb_load_lattices(root_path, partition, ner_feat, ner_only, baseline, la_name, tb_name, ma_name, 'inf')
         lattices_vocab = _get_vocab(lattices_dataset)
         base_vocab = _get_vocab(base_dataset)
         data_vocab = _get_vocabs_union(lattices_vocab, base_vocab)
     else:
-        if seq_type.endswith('-mtag'):
-            vocab_dir_path = root_path / la_name / tb_name / 'seq' / f'{seq_type}' / f'vocab-{baseline}'
-            base_dataset = tb.tb_load_base_mtag(root_path, partition, baseline, la_name, tb_name, seq_type)
-        else:
-            vocab_dir_path = root_path / la_name / tb_name / f'vocab-{baseline}'
-            base_dataset = tb.tb_load_base(root_path, partition, baseline, la_name, tb_name)
+        vocab_dir_path = root_path / la_name / f'{tb_name}-NER' / f'vocab-{baseline}' / (f'{ner_feat}' if not ner_only else f'{ner_feat}_only')
+        base_dataset = tb.tb_load_base(root_path, partition, ner_feat, ner_only, baseline, la_name, tb_name)
         if baseline != 'gold':
-            gold_dataset = tb.tb_load_base(root_path, partition, 'gold', la_name, tb_name)
+            gold_dataset = tb.tb_load_base(root_path, partition, ner_feat, ner_only, 'gold', la_name, tb_name)
             gold_vocab = _get_vocab(gold_dataset)
             base_vocab = _get_vocab(base_dataset)
             data_vocab = _get_vocabs_union(gold_vocab, base_vocab)
@@ -789,13 +786,13 @@ def _save_vocab(root_path, partition, baseline, la_name, tb_name, seq_type='', m
     _save_vocab_files(vocab_dir_path, data_vocab)
 
 
-def _save_ft_emb(root_path, ft_root_path, baseline, la_name, tb_name, seq_type='', ma_name=None):
+def _save_ft_emb(root_path, ft_root_path, ner_feat, ner_only, baseline, la_name, tb_name, seq_type='', ma_name=None):
     if seq_type == 'lattice':
-        vocab_dir_path = root_path / la_name / tb_name / f'{seq_type}' / ma_name / f'vocab-{baseline}'
+        vocab_dir_path = root_path / la_name / f'{tb_name}-NER' / f'{seq_type}' / ma_name / f'vocab-{baseline}' / (f'{ner_feat}' if not ner_only else f'{ner_feat}_only')
     elif seq_type:
-        vocab_dir_path = root_path / la_name / tb_name / 'seq' / f'{seq_type}' / f'vocab-{baseline}'
+        vocab_dir_path = root_path / la_name / f'{tb_name}-NER' / 'seq' / f'{seq_type}' / f'vocab-{baseline}'
     else:
-        vocab_dir_path = root_path / la_name / tb_name / f'vocab-{baseline}'
+        vocab_dir_path = root_path / la_name / f'{tb_name}-NER' / f'vocab-{baseline}' / (f'{ner_feat}' if not ner_only else f'{ner_feat}_only')
     data_vocab = _load_vocab_entries(vocab_dir_path)
     ft_model_path = ft_root_path / f'models/cc.{la_name}.300.bin'
     ft.ft_model = None
@@ -804,71 +801,31 @@ def _save_ft_emb(root_path, ft_root_path, baseline, la_name, tb_name, seq_type='
 
 
 def main():
+    f = 1
+    o = False
+    # p = 0
     scheme = 'UD'
-    # scheme = 'SPMRL'
     partition = ['dev', 'test', 'train']
+    ner_feat = ['plo', 'nocat', 'full']
     root_path = Path.home() / f'dev/aseker00/modi/tb/{scheme}'
-    ft_path = Path.home() / 'dev/aseker00/fastText'
-    if scheme == 'UD':
-        langs = {'ar': 'Arabic', 'en': 'English', 'he': 'Hebrew', 'tr': 'Turkish'}
-        tb_names = {'ar': 'PADT', 'en': 'EWT', 'he': 'HTB', 'tr': 'IMST'}
-        ma_names = {'ar': 'calima-star', 'he': 'heblex', 'tr': 'trmorph2'}
-        # ma_names = {'ar': 'Apertium-E', 'he': 'Apertium', 'tr': 'ApertiumMA'}
-        # ma_names = {'ar': 'baseline', 'he': 'baseline', 'tr': 'baseline'}
-    else:
-        langs = {'he': 'Hebrew'}
-        tb_names = {'he': 'HEBTB'}
-        ma_names = {'he': 'heblex'}
+    ft_path = Path.home() / 'dev/fastText'
+    tb_name = 'HTB'
+    ma_name = 'heblex'
+    la_name = 'he'
+    # _save_vocab(root_path, partition, ner_feat[f], o, 'gold', la_name, tb_name)
+    # _save_ft_emb(root_path, ft_path, ner_feat[f], o, 'gold', la_name, tb_name)
+    _save_vocab(root_path, partition, ner_feat[f], o, 'gold', la_name, tb_name, 'lattice', ma_name)
+    _save_ft_emb(root_path, ft_path, ner_feat[f], o, 'gold', la_name, tb_name, 'lattice', ma_name)
 
-    for la_name in ['ar', 'en', 'he', 'tr']:
-        if la_name not in tb_names:
-            continue
-        tb_name = tb_names[la_name]
-        _save_vocab(root_path, partition, 'gold', la_name, tb_name)
-        _save_ft_emb(root_path, ft_path, 'gold', la_name, tb_name)
-        if scheme == 'UD':
-            _save_vocab(root_path, partition, 'udpipe', la_name, tb_name)
-            _save_ft_emb(root_path, ft_path, 'udpipe', la_name, tb_name)
-        if la_name in ['ar', 'he', 'tr']:
-            _save_vocab(root_path, partition, 'gold', la_name, tb_name, 'token-mtag')
-            _save_ft_emb(root_path, ft_path, 'gold', la_name, tb_name, 'token-mtag')
-            # if scheme == 'SPMRL':
-            #     _save_vocab(root_path, partition, 'gold', la_name, tb_name, 'morpheme-type-mtag')
-            #     _save_ft_emb(root_path, ft_path, 'gold', la_name, tb_name, 'morpheme-type-mtag')
-            if la_name in ['he', 'tr']:
-                if la_name in ma_names:
-                    ma_name = ma_names[la_name]
-                    _save_vocab(root_path, partition, 'gold', la_name, tb_name, 'lattice', ma_name)
-                    _save_ft_emb(root_path, ft_path, 'gold', la_name, tb_name, 'lattice', ma_name)
-
-        token_samples, morph_samples, data_vocab = load_data_samples(root_path, partition, 'gold', la_name, tb_name)
-        for partition_type in partition:
-            print(f'{token_samples[partition_type][0].shape} {partition_type} gold token samples, '
-                  f'{morph_samples[partition_type].shape} {partition_type} gold morpheme samples')
-        if scheme == 'UD':
-            token_samples, gold_morph_samples, base_morph_samples, data_vocab = load_data_samples(root_path, partition, 'udpipe', la_name, tb_name)
-            for partition_type in partition:
-                print(f'{token_samples[partition_type][0].shape} {partition_type} token samples, '
-                      f'{gold_morph_samples[partition_type].shape} {partition_type} gold morpheme samples, '
-                      f'{base_morph_samples[partition_type].shape} {partition_type} udpipe morpheme samples')
-        if la_name in ['ar', 'he', 'tr']:
-            token_samples, morph_samples, data_vocab = load_data_samples(root_path, partition, 'gold', la_name, tb_name, 'token-mtag')
-            for partition_type in partition:
-                print(f'{token_samples[partition_type][0].shape} {partition_type} gold token samples, '
-                      f'{morph_samples[partition_type].shape} {partition_type} gold multi-tag morpheme samples')
-            # if scheme == 'SPMRL':
-            #     token_samples, morph_samples, data_vocab = load_data_samples(root_path, partition, 'gold', la_name, tb_name, 'morpheme-type-mtag')
-            #     for partition_type in partition:
-            #         print(f'{token_samples[partition_type][0].shape[0]} {partition_type} token samples, '
-            #               f'{morph_samples[partition_type].shape[0]} {partition_type} multi-morpheme-type morpheme samples')
-            if la_name in ['he', 'tr']:
-                if la_name in ma_names:
-                    ma_name = ma_names[la_name]
-                    token_samples, infused_morph_samples, uninfused_morph_samples, data_vocab = load_data_samples(root_path, partition, 'gold', la_name, tb_name, 'lattice', ma_name)
-                    for partition_type in partition:
-                        print(f'{token_samples[partition_type][0].shape} {partition_type} gold token samples, '
-                              f'{infused_morph_samples[partition_type][0].shape} {partition_type} infused morpheme samples, '
-                              f'{uninfused_morph_samples[partition_type][0].shape} {partition_type} uninfused morpheme samples')
+    # token_samples, morph_samples, data_vocab = load_data_samples(root_path, partition, ner_feat[f], o, 'gold', la_name, tb_name)
+    # for partition_type in partition:
+    #     print(f'{token_samples[partition_type][0].shape} {partition_type} gold token samples, '
+    #           f'{morph_samples[partition_type].shape} {partition_type} gold morpheme samples')
+    # token_samples, infused_morph_samples, uninfused_morph_samples, data_vocab = load_data_samples(root_path, partition, ner_feat[f], o, 'gold', la_name, tb_name, 'lattice', ma_name)
+    # for partition_type in partition:
+    #     print(f'{token_samples[partition_type][0].shape} {partition_type} gold token samples, '
+    #           f'{infused_morph_samples[partition_type][0].shape} {partition_type} infused morpheme samples, '
+    #           f'{uninfused_morph_samples[partition_type][0].shape} {partition_type} uninfused morpheme samples')
 
 
 if __name__ == '__main__':

@@ -81,9 +81,9 @@ def _save_data_lattices(root_path, dataset, ner_feat, ner_only, baseline, data_t
             file_path = root_path / f'{partition_type}-{baseline}.{ner_suff}.lattices.csv'
         for i, df in enumerate(dataset[partition_type]):
             if i == 0:
-                df.to_csv(str(file_path))
+                df.to_csv(str(file_path), index=False)
             else:
-                df.to_csv(str(file_path), mode='a', header=False)
+                df.to_csv(str(file_path), index=False, mode='a', header=False)
         # df.to_csv(str(file_path))
 
 
