@@ -48,7 +48,7 @@ if all([path.exists() for path in [inf_dev_set_path, inf_test_set_path, inf_trai
     data_vocab = ds.load_vocab(tb_root_dir_path, 'gold', la_name, tb_name, seq_type, ma_name)
 else:
     partition = ['dev', 'test', 'train']
-    token_samples, inf_morph_samples, uninf_morph_samples, data_vocab = ds.load_data_samples(tb_root_dir_path, partition, ner_feat[f], ner_only, 'gold', la_name, tb_name, seq_type, ma_name)
+    token_samples, inf_morph_samples, uninf_morph_samples, data_vocab = ds.load_data_samples(tb_root_dir_path, partition[:1], ner_feat[f], ner_only, 'gold', la_name, tb_name, seq_type, ma_name)
     token_lengths = {t: torch.tensor(token_samples[t][1], dtype=torch.long) for t in token_samples}
     token_samples = {t: torch.tensor(token_samples[t][0], dtype=torch.long) for t in token_samples}
     inf_analysis_lengths = {t: torch.tensor(inf_morph_samples[t][1], dtype=torch.long) for t in inf_morph_samples}
@@ -56,13 +56,13 @@ else:
     uninf_analysis_lengths = {t: torch.tensor(uninf_morph_samples[t][1], dtype=torch.long) for t in uninf_morph_samples}
     uninf_morph_samples = {t: torch.tensor(uninf_morph_samples[t][0], dtype=torch.long) for t in uninf_morph_samples}
     inf_dev_set = TensorDataset(*[s['dev'] for s in [token_samples, token_lengths, inf_morph_samples, inf_analysis_lengths, inf_morph_samples]])
-    inf_test_set = TensorDataset(*[s['test'] for s in [token_samples, token_lengths, inf_morph_samples, inf_analysis_lengths, inf_morph_samples]])
-    inf_train_set = TensorDataset(*[s['train'] for s in [token_samples, token_lengths, inf_morph_samples, inf_analysis_lengths, inf_morph_samples]])
+    # inf_test_set = TensorDataset(*[s['test'] for s in [token_samples, token_lengths, inf_morph_samples, inf_analysis_lengths, inf_morph_samples]])
+    # inf_train_set = TensorDataset(*[s['train'] for s in [token_samples, token_lengths, inf_morph_samples, inf_analysis_lengths, inf_morph_samples]])
     uninf_dev_set = TensorDataset(*[s['dev'] for s in [token_samples, token_lengths, uninf_morph_samples, uninf_analysis_lengths, inf_morph_samples]])
     uninf_test_set = TensorDataset(*[s['test'] for s in [token_samples, token_lengths, uninf_morph_samples, uninf_analysis_lengths, inf_morph_samples]])
     torch.save(inf_dev_set, inf_dev_set_path)
-    torch.save(inf_test_set, inf_test_set_path)
-    torch.save(inf_train_set, inf_train_set_path)
+    # torch.save(inf_test_set, inf_test_set_path)
+    # torch.save(inf_train_set, inf_train_set_path)
     torch.save(uninf_dev_set, uninf_dev_set_path)
     torch.save(uninf_test_set, uninf_test_set_path)
 

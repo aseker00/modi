@@ -812,8 +812,8 @@ def main():
     tb_name = 'HTB'
     ma_name = 'heblex'
     la_name = 'he'
-    # _save_vocab(root_path, partition, ner_feat[f], o, 'gold', la_name, tb_name)
-    # _save_ft_emb(root_path, ft_path, ner_feat[f], o, 'gold', la_name, tb_name)
+    _save_vocab(root_path, partition, ner_feat[f], o, 'gold', la_name, tb_name)
+    _save_ft_emb(root_path, ft_path, ner_feat[f], o, 'gold', la_name, tb_name)
     _save_vocab(root_path, partition, ner_feat[f], o, 'gold', la_name, tb_name, 'lattice', ma_name)
     _save_ft_emb(root_path, ft_path, ner_feat[f], o, 'gold', la_name, tb_name, 'lattice', ma_name)
 

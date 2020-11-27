@@ -96,7 +96,8 @@ def _load_data_lattices(root_path, partition, ner_feat, ner_only, baseline, data
         else:
             file_path = root_path / f'{partition_type}-{baseline}.{ner_suff}.lattices.csv'
         print(f'loading {file_path}')
-        df = pd.read_csv(str(file_path), index_col=0, keep_default_na=False)
+        # df = pd.read_csv(str(file_path), index_col=0, keep_default_na=False)
+        df = pd.read_csv(str(file_path), keep_default_na=False)
         lattices = {sent_id: x.reset_index(drop=True) for sent_id, x in df.groupby(df.sent_id)}
         dataset[partition_type] = [lattices[sent_id] for sent_id in sorted(lattices)]
         print(f'{file_path.stem} data size: {len(dataset[partition_type])}')
@@ -576,10 +577,10 @@ def main():
     ma_name = 'heblex'
     lang = 'Hebrew'
     tb_name = 'HTB'
-    _save_base(tb_path, root_path, partition[:1], ner_feat[0], False, 'gold', lang, la_name, tb_name, scheme)
-    tb_export_tokens(root_path, tb_path, partition[:1], ner_feat[0], False, lang, la_name, tb_name)
-    _save_uninfused_lattices(tb_path, root_path, partition[:1], ner_feat[0], False, 'gold', lang, la_name, tb_name, ma_name, scheme)
-    _save_infused_lattices(root_path, partition[:1], ner_feat[0], False, 'gold', la_name, tb_name, ma_name)
+    # _save_base(tb_path, root_path, partition, ner_feat[1], True, 'gold', lang, la_name, tb_name, scheme)
+    tb_export_tokens(root_path, tb_path, partition, ner_feat[1], True, lang, la_name, tb_name)
+    _save_uninfused_lattices(tb_path, root_path, partition, ner_feat[1], True, 'gold', lang, la_name, tb_name, ma_name, scheme)
+    _save_infused_lattices(root_path, partition, ner_feat[1], True, 'gold', la_name, tb_name, ma_name)
 
 
 if __name__ == '__main__':
